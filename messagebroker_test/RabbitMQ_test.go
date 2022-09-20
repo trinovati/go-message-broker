@@ -1,12 +1,12 @@
 package testing
 
 import (
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers"
+	rabbitmq "gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ"
 	"log"
 	"strconv"
 	"testing"
 	"time"
-	"trinovati-message-handler/services/connector/messagebroker"
-	rabbitmq "trinovati-message-handler/services/connector/messagebroker/RabbitMQ"
 
 	"github.com/streadway/amqp"
 )

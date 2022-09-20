@@ -1,9 +1,9 @@
 package rabbitmq
 
 import (
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers"
 	"log"
 	"strconv"
-	"trinovati-message-handler/services/connector/messagebroker"
 )
 
 /*

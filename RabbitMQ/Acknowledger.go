@@ -2,10 +2,10 @@ package rabbitmq
 
 import (
 	"errors"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers"
 	"log"
 	"sync"
 	"time"
-	"trinovati-message-handler/services/connector/messagebroker"
 
 	"github.com/streadway/amqp"
 )

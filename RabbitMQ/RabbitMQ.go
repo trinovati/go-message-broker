@@ -1,7 +1,7 @@
 package rabbitmq
 
 import (
-	"trinovati-message-handler/services/connector/messagebroker"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers"
 
 	"github.com/streadway/amqp"
 )
