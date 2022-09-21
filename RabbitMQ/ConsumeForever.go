@@ -25,7 +25,7 @@ func (r *RabbitMQ) ConsumeForever() {
 			consumedMessage.MessageId = messageId
 			consumedMessage.TransmissionData = delivery.Body
 
-			r.ConsumeData.QueueConsumeChannel <- *consumedMessage
+			r.ConsumeData.QueueConsumeChannel <- consumedMessage
 
 		case notify := <-closeNotifyChannel:
 			log.Println("Consumed queue '" + r.ConsumeData.QueueName + "' have closed with reason: '" + notify.Reason + "'")
