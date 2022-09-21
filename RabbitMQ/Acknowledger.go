@@ -2,18 +2,28 @@ package rabbitmq
 
 import (
 	"errors"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers"
 	"log"
 	"sync"
 	"time"
 
 	"github.com/streadway/amqp"
+	messagebroker "gitlab.com/aplicacao/trinovati-connector-message-brokers"
 )
 
 /*
 Acknowledge a message, sinalizing the RabbitMQ server that the message can be eliminated of the queue, or requeued on a error queue.
+
+success is the marker that the system could or couldn't handle the message.
+
+messageId is the control that the broker use to administrate its messages.
+
+optionalRoute is a string flag, path or destiny that the message broker will redirect the message.
+
+comment is a commentary that can be anexed to the object as a sinalizer of errors or success.
 */
-func (r *RabbitMQ) Acknowledge(acknowledger messagebroker.ConsumedMessageAcknowledger) (err error) {
+func (r *RabbitMQ) Acknowledge(success bool, messageId string, optionalRoute string, comment string) (err error) {
+	acknowledger := messagebroker.NewMessageBrokerAcknowledger(success, messageId, optionalRoute, comment)
+
 	errorFileIdentification := "RabbitMQ.go at Acknowledge()"
 	var messagesMap *sync.Map
 	var notifyQueueName string

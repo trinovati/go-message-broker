@@ -1,12 +1,13 @@
 package testing
 
 import (
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers"
-	rabbitmq "gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ"
 	"log"
 	"strconv"
 	"testing"
 	"time"
+
+	messagebroker "gitlab.com/aplicacao/trinovati-connector-message-brokers"
+	rabbitmq "gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ"
 
 	"github.com/streadway/amqp"
 )
@@ -77,7 +78,7 @@ func TestPopulateConsumeRabbitMQ(t *testing.T) {
 	expectedNotifyQueueName := "_" + exchangeName + "__failed_messages"
 	qos := 2
 	purgeBeforeStarting := true
-	queueConsumeChannel := make(chan messagebroker.ConsumedMessage)
+	queueConsumeChannel := make(chan interface{})
 
 	semaphore := &testSemaphore{}
 
@@ -228,7 +229,7 @@ func TestPopulateRPCServer(t *testing.T) {
 	callbackQueueName := "callback_queue_name"
 	callbackAccessKey := "callback_access_key"
 
-	queueConsumeChannel := make(chan messagebroker.ConsumedMessage)
+	queueConsumeChannel := make(chan interface{})
 
 	expectedNotifyQueueName := "_" + RPCexchangeName + "__failed_messages"
 
@@ -326,7 +327,7 @@ func TestMakeCopyRabbitMQ(t *testing.T) {
 	expectedCallbackNotifyQueueName := "_" + callbackExchangeName + "__failed_messages"
 	qos := 2
 	purgeBeforeStarting := true
-	queueConsumeChannel := make(chan messagebroker.ConsumedMessage)
+	queueConsumeChannel := make(chan interface{})
 
 	tagProducer := &testTagProducer{}
 	semaphore := &testSemaphore{}
@@ -595,7 +596,7 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 	consumerQueueAccessKey := consumerQueueName
 	qos := 0
 	purgeBeforeStarting := true
-	queueConsumeChannel := make(chan messagebroker.ConsumedMessage)
+	queueConsumeChannel := make(chan interface{})
 
 	semaphore := &testSemaphore{}
 
@@ -653,13 +654,13 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 
 		recievedMessage := <-queueConsumeChannel
 
-		transmissionData := string(recievedMessage.TransmissionData.([]byte))
+		transmissionData := string(recievedMessage.(messagebroker.MessageBrokerConsumedMessage).TransmissionData.([]byte))
 
 		if transmissionData != messages[i] {
 			t.Error("error at consume.\nexpected: " + messages[i] + "\ngot:      " + transmissionData)
 		}
 
-		err = messageBrokerConsumer.Acknowledge(*messagebroker.NewConsumedMessageAcknowledger(true, "success", recievedMessage.MessageId, ""))
+		err = messageBrokerConsumer.Acknowledge(true, "success", recievedMessage.(messagebroker.MessageBrokerConsumedMessage).MessageId, "")
 		if err != nil {
 			t.Error("error with acknowlege: " + err.Error())
 		}
@@ -766,7 +767,7 @@ func TestRPCServerResquestConsumeForever(t *testing.T) {
 	RPCQos := 0
 	RPCPurgeBeforeStarting := true
 
-	RPCQueueConsumeChannel := make(chan messagebroker.ConsumedMessage)
+	RPCQueueConsumeChannel := make(chan interface{})
 
 	callbackExchangeName := RPCExchangeName
 	callbackExchangeType := RPCExchangeType
@@ -828,7 +829,7 @@ func TestRPCServerResquestConsumeForever(t *testing.T) {
 
 		recievedMessage := <-RPCQueueConsumeChannel
 
-		RPCData := recievedMessage.TransmissionData.(*messagebroker.RPCDataDto)
+		RPCData := recievedMessage.(messagebroker.MessageBrokerConsumedMessage).TransmissionData.(*messagebroker.RPCDataDto)
 
 		if RPCData.CorrelationId != strconv.Itoa(i) {
 			t.Error("error at correlation ID.\nexpected: " + strconv.Itoa(i) + "\ngot:      " + RPCData.CorrelationId)
@@ -838,7 +839,7 @@ func TestRPCServerResquestConsumeForever(t *testing.T) {
 			t.Error("error at consume.\nexpected: " + messages[i] + "\ngot:      " + string(RPCData.Data))
 		}
 
-		err = messageBrokerRequestConsumer.Acknowledge(*messagebroker.NewConsumedMessageAcknowledger(true, "success", recievedMessage.MessageId, ""))
+		err = messageBrokerRequestConsumer.Acknowledge(true, "success", recievedMessage.(messagebroker.MessageBrokerConsumedMessage).MessageId, "")
 		if err != nil {
 			t.Error("error with acknowlege: " + err.Error())
 		}
@@ -866,7 +867,7 @@ func TestRPCServerCallbackPublish(t *testing.T) {
 	RPCQos := 0
 	RPCPurgeBeforeStarting := true
 
-	RPCQueueConsumeChannel := make(chan messagebroker.ConsumedMessage)
+	RPCQueueConsumeChannel := make(chan interface{})
 
 	semaphore := &testSemaphore{}
 

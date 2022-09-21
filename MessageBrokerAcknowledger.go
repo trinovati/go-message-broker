@@ -1,8 +1,8 @@
 package messagebroker
 
 /*
-Generic object that message consume manager use to recieve the status response of a sended message.
-Some message consume manager expects to acknowledge every message.
+Generic object that message broker use to recieve the status response of a sended message.
+Some message broker expects to acknowledge every message.
 
 Success is the marker that the system could or couldn't handle the message.
 
@@ -12,7 +12,7 @@ OptionalRoute is a string flag, path or destiny that the message broker will red
 
 Comment is a commentary that can be anexed to the object as a sinalizer of errors or success.
 */
-type ConsumedMessageAcknowledger struct {
+type MessageBrokerAcknowledger struct {
 	Success       bool
 	MessageId     string
 	OptionalRoute string
@@ -20,8 +20,8 @@ type ConsumedMessageAcknowledger struct {
 }
 
 /*
-Create a generic object that message consume manager use to recieve the status response of a sended message.
-Some message consume manager expects to acknowledge every message.
+Create a generic object that message broker use to recieve the status response of a sended message.
+Some message broker expects to acknowledge every message.
 
 Success is the marker that the system could or couldn't handle the message.
 
@@ -31,8 +31,8 @@ OptionalRoute is a string flag, path or destiny that the message broker will red
 
 Comment is a commentary that can be anexed to the object as a sinalizer of errors or success.
 */
-func NewConsumedMessageAcknowledger(success bool, comment string, messageId string, optionalRoute string) *ConsumedMessageAcknowledger {
-	return &ConsumedMessageAcknowledger{
+func NewMessageBrokerAcknowledger(success bool, comment string, messageId string, optionalRoute string) *MessageBrokerAcknowledger {
+	return &MessageBrokerAcknowledger{
 		Success:       success,
 		MessageId:     messageId,
 		OptionalRoute: optionalRoute,

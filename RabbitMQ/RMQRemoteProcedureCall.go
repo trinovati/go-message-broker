@@ -1,7 +1,7 @@
 package rabbitmq
 
 import (
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers"
+	messagebroker "gitlab.com/aplicacao/trinovati-connector-message-brokers"
 )
 
 /*
@@ -66,7 +66,7 @@ func newRPCServer() *RPCServer {
 /*
 Populate a Remote Procedure Call Server with information needed for consuming a RPC request and publishing a RPC response.
 */
-func (r *RPCServer) populate(RPCExchangeName string, RPCExchangeType string, RPCQueueName string, RPCAccessKey string, RPCQos int, RPCPurgeBeforeStarting bool, callbackExchangeName string, callbackExchangeType string, callbackQueueName string, callbackAccessKey string, RPCQueueConsumeChannel chan<- messagebroker.ConsumedMessage) {
+func (r *RPCServer) populate(RPCExchangeName string, RPCExchangeType string, RPCQueueName string, RPCAccessKey string, RPCQos int, RPCPurgeBeforeStarting bool, callbackExchangeName string, callbackExchangeType string, callbackQueueName string, callbackAccessKey string, RPCQueueConsumeChannel chan<- interface{}) {
 	r.Consumer = newRMQConsume(RPCQueueConsumeChannel)
 	r.Consumer.populate(RPCExchangeName, RPCExchangeType, RPCQueueName, RPCAccessKey, RPCQos, RPCPurgeBeforeStarting)
 

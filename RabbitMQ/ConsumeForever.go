@@ -1,9 +1,10 @@
 package rabbitmq
 
 import (
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers"
 	"log"
 	"strconv"
+
+	messagebroker "gitlab.com/aplicacao/trinovati-connector-message-brokers"
 )
 
 /*
@@ -20,7 +21,7 @@ func (r *RabbitMQ) ConsumeForever() {
 			messageId := strconv.FormatUint(delivery.DeliveryTag, 10)
 			r.ConsumeData.MessagesMap.Store(messageId, delivery)
 
-			consumedMessage := messagebroker.NewConsumedMessage()
+			consumedMessage := messagebroker.NewMessageBrokerConsumedMessage()
 			consumedMessage.MessageId = messageId
 			consumedMessage.TransmissionData = delivery.Body
 

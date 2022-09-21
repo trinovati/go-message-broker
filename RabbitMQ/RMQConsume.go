@@ -2,7 +2,6 @@ package rabbitmq
 
 import (
 	"errors"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers"
 	"log"
 	"sync"
 	"time"
@@ -22,14 +21,14 @@ type RMQConsume struct {
 	NotifyQueueName     string
 	Qos                 int
 	PurgeBeforeStarting bool
-	QueueConsumeChannel chan<- messagebroker.ConsumedMessage
+	QueueConsumeChannel chan<- interface{}
 	MessagesMap         *sync.Map
 }
 
 /*
 Create a new object that can hold all information needed to consume from a RabbitMQ queue.
 */
-func newRMQConsume(queueConsumeChannel chan<- messagebroker.ConsumedMessage) *RMQConsume {
+func newRMQConsume(queueConsumeChannel chan<- interface{}) *RMQConsume {
 	return &RMQConsume{
 		QueueConsumeChannel: queueConsumeChannel,
 	}

@@ -2,9 +2,10 @@ package rabbitmq
 
 import (
 	"errors"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers"
 	"log"
 	"strconv"
+
+	messagebroker "gitlab.com/aplicacao/trinovati-connector-message-brokers"
 )
 
 /*
@@ -25,7 +26,7 @@ func (r *RabbitMQ) RPCServerResquestConsumeForever() {
 
 			if delivery.CorrelationId == "" {
 				err := errors.New("in " + errorFileIdentification + ": no correlation ID comming at message " + string(delivery.Body))
-				r.Acknowledge(*messagebroker.NewConsumedMessageAcknowledger(false, err.Error(), strconv.FormatUint(delivery.DeliveryTag, 10), ""))
+				r.Acknowledge(false, err.Error(), strconv.FormatUint(delivery.DeliveryTag, 10), "")
 				continue
 			}
 
@@ -34,7 +35,7 @@ func (r *RabbitMQ) RPCServerResquestConsumeForever() {
 			requestDataManager.CorrelationId = delivery.CorrelationId
 			requestDataManager.ResponseRoute = delivery.ReplyTo
 
-			consumedMessage := messagebroker.NewConsumedMessage()
+			consumedMessage := messagebroker.NewMessageBrokerConsumedMessage()
 			consumedMessage.MessageId = messageId
 			consumedMessage.TransmissionData = requestDataManager
 

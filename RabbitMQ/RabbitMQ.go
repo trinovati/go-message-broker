@@ -1,7 +1,7 @@
 package rabbitmq
 
 import (
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers"
+	messagebroker "gitlab.com/aplicacao/trinovati-connector-message-brokers"
 
 	"github.com/streadway/amqp"
 )
@@ -27,7 +27,7 @@ func NewRabbitMQ(service string, semaphore messagebroker.SemaphoreManager) *Rabb
 	}
 }
 
-func (r *RabbitMQ) PopulateConsume(exchangeName string, exchangeType string, queueName string, accessKey string, qos int, purgeBeforeStarting bool, queueConsumeChannel chan<- messagebroker.ConsumedMessage) {
+func (r *RabbitMQ) PopulateConsume(exchangeName string, exchangeType string, queueName string, accessKey string, qos int, purgeBeforeStarting bool, queueConsumeChannel chan<- interface{}) {
 	r.ConsumeData = newRMQConsume(queueConsumeChannel)
 
 	r.ConsumeData.populate(exchangeName, exchangeType, queueName, accessKey, qos, purgeBeforeStarting)
@@ -49,7 +49,7 @@ func (r *RabbitMQ) PopulateRPCClient(RPCExchangeName string, RPCExchangeType str
 	r.RemoteProcedureCallData.RPCClient.populate(RPCExchangeName, RPCExchangeType, RPCQueueName, RPCAccessKey, callbackExchangeName, callbackExchangeType, callbackQueueName, CallbackAccessKey, tagProducerManager)
 }
 
-func (r *RabbitMQ) PopulateRPCServer(RPCExchangeName string, RPCExchangeType string, RPCQueueName string, RPCAccessKey string, RPCQos int, RPCPurgeBeforeStarting bool, callbackExchangeName string, callbackExchangeType string, callbackQueueName string, callbackAccessKey string, RPCQueueConsumeChannel chan<- messagebroker.ConsumedMessage) {
+func (r *RabbitMQ) PopulateRPCServer(RPCExchangeName string, RPCExchangeType string, RPCQueueName string, RPCAccessKey string, RPCQos int, RPCPurgeBeforeStarting bool, callbackExchangeName string, callbackExchangeType string, callbackQueueName string, callbackAccessKey string, RPCQueueConsumeChannel chan<- interface{}) {
 	if r.RemoteProcedureCallData == nil {
 		r.RemoteProcedureCallData = newRMQRemoteProcedureCall()
 	}
