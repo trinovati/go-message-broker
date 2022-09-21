@@ -18,7 +18,6 @@ func GetEnvOrDefault(environmentVariableName string, defaultValue string) string
 Environmental variable used by RabbitMQ service for connection with server.
 */
 var (
-	//RABBITMQ_SERVER = GetEnvOrDefault("RABBITMQ_SERVER", "amqp://trinovati:7t2UzJ55Z8zRBuFKqjfWQAp7@rabbitmq-dev-internal:5672/")
 	RABBITMQ_SERVER = GetEnvOrDefault("RABBITMQ_SERVER", "amqp://guest:guest@localhost:5672/")
 )
 

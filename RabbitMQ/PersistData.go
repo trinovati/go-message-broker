@@ -7,12 +7,12 @@ import (
 /*
 Choose the right method for publish data to the queue linked to RabbitMQ.PublishData object.
 */
-func (r *RabbitMQ) PersistData(transformedMessage interface{}, persistFormatFlag string) (err error) {
+func (r *RabbitMQ) PersistData(transformedMessage interface{}, newTarget string, persistFormatFlag string) (err error) {
 	errorFileIdentification := "RabbitMQ.go at PersistData()"
 
 	switch message := transformedMessage.(type) {
 	case string:
-		err := r.Publish(message)
+		err := r.Publish(message, newTarget)
 		if err != nil {
 			return errors.New("error publishing in " + errorFileIdentification + ": " + err.Error())
 		}

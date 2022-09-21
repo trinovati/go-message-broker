@@ -37,7 +37,7 @@ func TestPopulatePublishRabbitMQ(t *testing.T) {
 
 	semaphore := &testSemaphore{}
 
-	messageBroker := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_CLIENT, semaphore)
+	messageBroker := rabbitmq.NewRabbitMQ(semaphore)
 
 	messageBroker.PopulatePublish(exchangeName, exchangeType, queueName, queueAccessKey)
 
@@ -82,7 +82,7 @@ func TestPopulateConsumeRabbitMQ(t *testing.T) {
 
 	semaphore := &testSemaphore{}
 
-	messageBroker := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_CLIENT, semaphore)
+	messageBroker := rabbitmq.NewRabbitMQ(semaphore)
 
 	messageBroker.PopulateConsume(exchangeName, exchangeType, queueName, queueAccessKey, qos, purgeBeforeStarting, queueConsumeChannel)
 
@@ -150,7 +150,8 @@ func TestPopulateRPCClient(t *testing.T) {
 
 	semaphore := &testSemaphore{}
 
-	messageBroker := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_RPC_CLIENT, semaphore)
+	messageBroker := rabbitmq.NewRabbitMQ(semaphore)
+	messageBroker.ChangeService(rabbitmq.RABBITMQ_RPC_CLIENT)
 
 	messageBroker.PopulateRPCClient(RPCExchangeName, RPCExchangeType, RPCQueueName, RPCAccessKey, callbackExchangeName, callbackExchangeType, callbackQueueName, callbackAccessKey, nil)
 
@@ -235,7 +236,8 @@ func TestPopulateRPCServer(t *testing.T) {
 
 	semaphore := &testSemaphore{}
 
-	messageBroker := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_RPC_SERVER, semaphore)
+	messageBroker := rabbitmq.NewRabbitMQ(semaphore)
+	messageBroker.ChangeService(rabbitmq.RABBITMQ_RPC_SERVER)
 
 	messageBroker.PopulateRPCServer(RPCexchangeName, RPCexchangeType, RPCQueueName, RPCQueueAccessKey, RPCqos, RPCpurgeBeforeStarting, callbackExchangeName, callbackExchangeType, callbackQueueName, callbackAccessKey, queueConsumeChannel)
 
@@ -332,7 +334,7 @@ func TestMakeCopyRabbitMQ(t *testing.T) {
 	tagProducer := &testTagProducer{}
 	semaphore := &testSemaphore{}
 
-	messageBroker := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_CLIENT, semaphore)
+	messageBroker := rabbitmq.NewRabbitMQ(semaphore)
 
 	messageBroker.PopulatePublish(publishExchangeName, publishExchangeType, publishQueueName, publishQueueAccessKey)
 	messageBroker.PopulateConsume(consumerExchangeName, consumerExchangeType, consumerQueueName, consumerQueueAccessKey, qos, purgeBeforeStarting, queueConsumeChannel)
@@ -519,8 +521,8 @@ func TestPublishRabbitMQ(t *testing.T) {
 
 	semaphore := &testSemaphore{}
 
-	messageBrokerPublisher := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_CLIENT, semaphore)
-	messageBrokerConsumer := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_CLIENT, semaphore)
+	messageBrokerPublisher := rabbitmq.NewRabbitMQ(semaphore)
+	messageBrokerConsumer := rabbitmq.NewRabbitMQ(semaphore)
 
 	messageBrokerPublisher.PopulatePublish(publishExchangeName, publishExchangeType, publishQueueName, publishQueueAccessKey)
 
@@ -557,7 +559,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 		t.Error("error Qos() a channel, limiting the maximum message ConsumeRMQ queue can hold: " + err.Error())
 	}
 
-	err = messageBrokerPublisher.Publish(message)
+	err = messageBrokerPublisher.Publish(message, "")
 	if err != nil {
 		t.Error("error publishing to queue. " + err.Error())
 	}
@@ -579,6 +581,18 @@ func TestPublishRabbitMQ(t *testing.T) {
 	}
 
 	log.Println(string(recievedMessage.Body))
+
+	channelDelete, err := messageBrokerConsumer.Connection.Channel()
+	if err != nil {
+		t.Error("error creating a channel. " + err.Error())
+	}
+
+	err = rabbitmq.DeleteQueueAndExchange(channelDelete, messageBrokerPublisher.PublishData.QueueName, messageBrokerPublisher.PublishData.ExchangeName, "doit")
+	if err != nil {
+		t.Error("error deleting queue " + messageBrokerPublisher.PublishData.QueueName + ": " + err.Error())
+	}
+
+	channelDelete.Close()
 }
 
 func TestConsumeForeverRabbitMQ(t *testing.T) {
@@ -600,8 +614,8 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 
 	semaphore := &testSemaphore{}
 
-	messageBrokerConsumer := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_CLIENT, semaphore)
-	messageBrokerPublisher := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_CLIENT, semaphore)
+	messageBrokerConsumer := rabbitmq.NewRabbitMQ(semaphore)
+	messageBrokerPublisher := rabbitmq.NewRabbitMQ(semaphore)
 
 	messageBrokerConsumer.PopulateConsume(consumerExchangeName, consumerExchangeType, consumerQueueName, consumerQueueAccessKey, qos, purgeBeforeStarting, queueConsumeChannel)
 
@@ -654,13 +668,13 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 
 		recievedMessage := <-queueConsumeChannel
 
-		transmissionData := string(recievedMessage.(messagebroker.MessageBrokerConsumedMessage).TransmissionData.([]byte))
+		transmissionData := string(recievedMessage.(*messagebroker.MessageBrokerConsumedMessage).TransmissionData.([]byte))
 
 		if transmissionData != messages[i] {
 			t.Error("error at consume.\nexpected: " + messages[i] + "\ngot:      " + transmissionData)
 		}
 
-		err = messageBrokerConsumer.Acknowledge(true, "success", recievedMessage.(messagebroker.MessageBrokerConsumedMessage).MessageId, "")
+		err = messageBrokerConsumer.Acknowledge(true, "success", recievedMessage.(*messagebroker.MessageBrokerConsumedMessage).MessageId, "")
 		if err != nil {
 			t.Error("error with acknowlege: " + err.Error())
 		}
@@ -668,7 +682,17 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 		log.Println(transmissionData)
 	}
 
-	time.Sleep(3 * time.Second)
+	channelDelete, err := messageBrokerConsumer.Connection.Channel()
+	if err != nil {
+		t.Error("error creating a channel. " + err.Error())
+	}
+
+	err = rabbitmq.DeleteQueueAndExchange(channelDelete, messageBrokerConsumer.ConsumeData.QueueName, messageBrokerConsumer.ConsumeData.ExchangeName, "doit")
+	if err != nil {
+		t.Error("error deleting queue: " + err.Error())
+	}
+
+	channelDelete.Close()
 }
 
 func TestRPCClientRequestPublish(t *testing.T) {
@@ -689,8 +713,10 @@ func TestRPCClientRequestPublish(t *testing.T) {
 	tagProducerManager := &testTagProducer{}
 	semaphore := &testSemaphore{}
 
-	messageBrokerRequestPublisher := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_RPC_CLIENT, semaphore)
-	messageBrokerConsumer := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_RPC_CLIENT, semaphore)
+	messageBrokerRequestPublisher := rabbitmq.NewRabbitMQ(semaphore)
+	messageBrokerRequestPublisher.ChangeService(rabbitmq.RABBITMQ_RPC_CLIENT)
+	messageBrokerConsumer := rabbitmq.NewRabbitMQ(semaphore)
+	messageBrokerConsumer.ChangeService(rabbitmq.RABBITMQ_RPC_CLIENT)
 
 	messageBrokerRequestPublisher.PopulateRPCClient(RPCExchangeName, RPCExchangeType, RPCQueueName, RPCAccessKey, callbackExchangeName, callbackExchangeType, callbackQueueName, callbackAccessKey, tagProducerManager)
 
@@ -754,6 +780,18 @@ func TestRPCClientRequestPublish(t *testing.T) {
 	}
 
 	log.Println(string(recievedMessage.Body))
+
+	channelDelete, err := messageBrokerConsumer.Connection.Channel()
+	if err != nil {
+		t.Error("error creating a channel. " + err.Error())
+	}
+
+	err = rabbitmq.DeleteQueueAndExchange(channelDelete, messageBrokerRequestPublisher.RemoteProcedureCallData.RPCClient.Publisher.QueueName, messageBrokerRequestPublisher.RemoteProcedureCallData.RPCClient.Publisher.ExchangeName, "doit")
+	if err != nil {
+		t.Error("error deleting queue " + messageBrokerRequestPublisher.RemoteProcedureCallData.RPCClient.Publisher.QueueName + ": " + err.Error())
+	}
+
+	channelDelete.Close()
 }
 
 func TestRPCServerResquestConsumeForever(t *testing.T) {
@@ -776,8 +814,10 @@ func TestRPCServerResquestConsumeForever(t *testing.T) {
 
 	semaphore := &testSemaphore{}
 
-	messageBrokerRequestConsumer := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_RPC_SERVER, semaphore)
-	messageBrokerPublisher := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_RPC_SERVER, semaphore)
+	messageBrokerRequestConsumer := rabbitmq.NewRabbitMQ(semaphore)
+	messageBrokerRequestConsumer.ChangeService(rabbitmq.RABBITMQ_RPC_SERVER)
+	messageBrokerPublisher := rabbitmq.NewRabbitMQ(semaphore)
+	messageBrokerPublisher.ChangeService(rabbitmq.RABBITMQ_RPC_SERVER)
 
 	messageBrokerRequestConsumer.PopulateRPCServer(RPCExchangeName, RPCExchangeType, RPCQueueName, RPCAccessKey, RPCQos, RPCPurgeBeforeStarting, callbackExchangeName, callbackExchangeType, callbackQueueName, callbackAccessKey, RPCQueueConsumeChannel)
 
@@ -829,7 +869,7 @@ func TestRPCServerResquestConsumeForever(t *testing.T) {
 
 		recievedMessage := <-RPCQueueConsumeChannel
 
-		RPCData := recievedMessage.(messagebroker.MessageBrokerConsumedMessage).TransmissionData.(*messagebroker.RPCDataDto)
+		RPCData := recievedMessage.(*messagebroker.MessageBrokerConsumedMessage).TransmissionData.(*messagebroker.RPCDataDto)
 
 		if RPCData.CorrelationId != strconv.Itoa(i) {
 			t.Error("error at correlation ID.\nexpected: " + strconv.Itoa(i) + "\ngot:      " + RPCData.CorrelationId)
@@ -839,7 +879,7 @@ func TestRPCServerResquestConsumeForever(t *testing.T) {
 			t.Error("error at consume.\nexpected: " + messages[i] + "\ngot:      " + string(RPCData.Data))
 		}
 
-		err = messageBrokerRequestConsumer.Acknowledge(true, "success", recievedMessage.(messagebroker.MessageBrokerConsumedMessage).MessageId, "")
+		err = messageBrokerRequestConsumer.Acknowledge(true, "success", recievedMessage.(*messagebroker.MessageBrokerConsumedMessage).MessageId, "")
 		if err != nil {
 			t.Error("error with acknowlege: " + err.Error())
 		}
@@ -847,7 +887,17 @@ func TestRPCServerResquestConsumeForever(t *testing.T) {
 		log.Println(string(RPCData.Data))
 	}
 
-	time.Sleep(3 * time.Second)
+	channelDelete, err := messageBrokerRequestConsumer.Connection.Channel()
+	if err != nil {
+		t.Error("error creating a channel. " + err.Error())
+	}
+
+	err = rabbitmq.DeleteQueueAndExchange(channelDelete, messageBrokerRequestConsumer.RemoteProcedureCallData.RPCServer.Consumer.QueueName, messageBrokerRequestConsumer.RemoteProcedureCallData.RPCServer.Consumer.ExchangeName, "doit")
+	if err != nil {
+		t.Error("error deleting queue: " + err.Error())
+	}
+
+	channelDelete.Close()
 }
 
 func TestRPCServerCallbackPublish(t *testing.T) {
@@ -871,8 +921,10 @@ func TestRPCServerCallbackPublish(t *testing.T) {
 
 	semaphore := &testSemaphore{}
 
-	messageBrokerResponsePublisher := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_RPC_SERVER, semaphore)
-	messageBrokerConsumer := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_RPC_SERVER, semaphore)
+	messageBrokerResponsePublisher := rabbitmq.NewRabbitMQ(semaphore)
+	messageBrokerResponsePublisher.ChangeService(rabbitmq.RABBITMQ_RPC_SERVER)
+	messageBrokerConsumer := rabbitmq.NewRabbitMQ(semaphore)
+	messageBrokerConsumer.ChangeService(rabbitmq.RABBITMQ_RPC_SERVER)
 
 	messageBrokerResponsePublisher.PopulateRPCServer(RPCExchangeName, RPCExchangeType, RPCQueueName, RPCAccessKey, RPCQos, RPCPurgeBeforeStarting, callbackExchangeName, callbackExchangeType, callbackQueueName, callbackAccessKey, RPCQueueConsumeChannel)
 
@@ -935,6 +987,18 @@ func TestRPCServerCallbackPublish(t *testing.T) {
 	}
 
 	log.Println(string(recievedMessage.Body))
+
+	channelDelete, err := messageBrokerConsumer.Connection.Channel()
+	if err != nil {
+		t.Error("error creating a channel. " + err.Error())
+	}
+
+	err = rabbitmq.DeleteQueueAndExchange(channelDelete, messageBrokerResponsePublisher.RemoteProcedureCallData.RPCServer.Callback.QueueName, messageBrokerResponsePublisher.RemoteProcedureCallData.RPCServer.Callback.ExchangeName, "doit")
+	if err != nil {
+		t.Error("error deleting queue " + messageBrokerResponsePublisher.RemoteProcedureCallData.RPCServer.Callback.QueueName + ": " + err.Error())
+	}
+
+	channelDelete.Close()
 }
 
 func TestRPCClientCallbackConsume(t *testing.T) {
@@ -953,8 +1017,10 @@ func TestRPCClientCallbackConsume(t *testing.T) {
 
 	semaphore := &testSemaphore{}
 
-	messageBrokerResponseConsumer := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_RPC_CLIENT, semaphore)
-	messageBrokerPublisher := rabbitmq.NewRabbitMQ(rabbitmq.RABBITMQ_RPC_CLIENT, semaphore)
+	messageBrokerResponseConsumer := rabbitmq.NewRabbitMQ(semaphore)
+	messageBrokerResponseConsumer.ChangeService(rabbitmq.RABBITMQ_RPC_CLIENT)
+	messageBrokerPublisher := rabbitmq.NewRabbitMQ(semaphore)
+	messageBrokerPublisher.ChangeService(rabbitmq.RABBITMQ_RPC_CLIENT)
 
 	messageBrokerResponseConsumer.PopulateRPCClient(RPCExchangeName, RPCExchangeType, RPCQueueName, RPCAccessKey, callbackExchangeName, callbackExchangeType, callbackQueueName, callbackAccessKey, nil)
 
@@ -1029,5 +1095,15 @@ func TestRPCClientCallbackConsume(t *testing.T) {
 
 	log.Println(string(recievedMessage))
 
-	time.Sleep(3 * time.Second)
+	channelDelete, err := messageBrokerPublisher.Connection.Channel()
+	if err != nil {
+		t.Error("error creating a channel. " + err.Error())
+	}
+
+	err = rabbitmq.DeleteQueueAndExchange(channelDelete, messageBrokerResponseConsumer.RemoteProcedureCallData.RPCClient.Callback.QueueName, messageBrokerResponseConsumer.RemoteProcedureCallData.RPCClient.Callback.ExchangeName, "doit")
+	if err != nil {
+		t.Error("error deleting queue: " + err.Error())
+	}
+
+	channelDelete.Close()
 }

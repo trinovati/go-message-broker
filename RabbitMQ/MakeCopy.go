@@ -4,8 +4,15 @@ import (
 	"sync"
 )
 
+/*
+Make a copy of the RabbitMQ, generating a pointer to another object containing the some of information.
+
+Keeps semaphore pointer, config variables.
+
+Discards connection, channels, maps.
+*/
 func (r *RabbitMQ) MakeCopy() *RabbitMQ {
-	newRmqData := NewRabbitMQ(r.Service, r.semaphore)
+	newRmqData := NewRabbitMQ(r.semaphore)
 
 	newRmqData.Connection = nil
 

@@ -39,7 +39,7 @@ func (r *RabbitMQ) RPCServerResquestConsumeForever() {
 			consumedMessage.MessageId = messageId
 			consumedMessage.TransmissionData = requestDataManager
 
-			r.RemoteProcedureCallData.RPCServer.Consumer.QueueConsumeChannel <- *consumedMessage
+			r.RemoteProcedureCallData.RPCServer.Consumer.QueueConsumeChannel <- consumedMessage
 
 		case notify := <-closeNotifyChannel:
 			log.Println("Consumed queue '" + r.RemoteProcedureCallData.RPCServer.Consumer.QueueName + "' have closed with reason: '" + notify.Reason + "'")

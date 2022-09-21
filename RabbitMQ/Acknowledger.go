@@ -98,7 +98,7 @@ func (r *RabbitMQ) publishNotify(message string, notifyQueueName string) {
 
 	newRabbitMQ.PopulatePublish(notifyExchangeName, notifyExchangeType, notifyQueueName, notifyAccessKey)
 
-	err := newRabbitMQ.Publish(message)
+	err := newRabbitMQ.Publish(message, "")
 	if err != nil {
 		log.Println("error publishing to notify queue in " + errorFileIdentification + ": " + err.Error())
 	}
