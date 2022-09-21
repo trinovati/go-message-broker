@@ -23,10 +23,10 @@ func NewMessageBrokerConsumedMessage() *MessageBrokerConsumedMessage {
 	return &MessageBrokerConsumedMessage{}
 }
 
-func (m *MessageBrokerConsumedMessage) GetTransmissionData() (trransmissionData interface{}) {
+func (m *MessageBrokerConsumedMessage) GetTransmissionData() (transmissionData interface{}) {
 	return m.TransmissionData
 }
 
-func (m *MessageBrokerConsumedMessage) GetMessageId() (messageId interface{}) {
+func (m *MessageBrokerConsumedMessage) GetMessageId() (messageId string) {
 	return m.MessageId
 }
