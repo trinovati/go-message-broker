@@ -2,6 +2,7 @@ package rabbitmq
 
 import (
 	"errors"
+	"fmt"
 )
 
 /*
@@ -18,7 +19,8 @@ func (r *RabbitMQ) PersistData(transformedMessage interface{}, newTarget string,
 		}
 
 	default:
-		return errors.New("in " + errorFileIdentification + ": message have come with untreatable interface{}")
+		completeError := fmt.Sprintf("in %s: message have reached PersistData without implemented '%T' format", errorFileIdentification, transformedMessage)
+		return errors.New(completeError)
 	}
 
 	return nil
