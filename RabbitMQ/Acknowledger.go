@@ -38,9 +38,11 @@ func (r *RabbitMQ) Acknowledge(success bool, messageId string, optionalRoute str
 		notifyQueueName = r.RemoteProcedureCallData.RPCClient.Callback.NotifyQueueName
 
 	case RABBITMQ_CLIENT:
-		log.Panic("in " + errorFileIdentification + ": not implemented rabbitmq service '" + r.service + "' have been added to RabbitMQ struct")
-	default:
+		messagesMap = r.ConsumeData.MessagesMap
+		notifyQueueName = r.ConsumeData.NotifyQueueName
 
+	default:
+		log.Panic("in " + errorFileIdentification + ": not implemented rabbitmq service '" + r.service + "' have been added to RabbitMQ struct")
 	}
 
 	mapObject, found := messagesMap.Load(acknowledger.MessageId)
