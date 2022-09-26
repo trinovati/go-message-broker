@@ -14,6 +14,7 @@ Discards connection, channels, maps.
 func (r *RabbitMQ) MakeCopy() *RabbitMQ {
 	newRmqData := NewRabbitMQ(r.semaphore)
 	newRmqData.ChangeServerAddress(r.serverAddress)
+	newRmqData.ChangeService(r.service)
 
 	newRmqData.Connection = nil
 
