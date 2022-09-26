@@ -12,7 +12,7 @@ import (
 Object containing methods to prepare a consumer or publisher to RabbitMQ service, operating as client, RPC client or RPC server.
 */
 type RabbitMQ struct {
-	Service                 string
+	service                 string
 	Connection              *amqp.Connection
 	serverAddress           string
 	ConsumeData             *RMQConsume
@@ -30,7 +30,7 @@ By default, the object will try to access the environmental variable RABBITMQ_SE
 */
 func NewRabbitMQ(semaphore messagebroker.SemaphoreManager) *RabbitMQ {
 	return &RabbitMQ{
-		Service:                 RABBITMQ_SERVICE,
+		service:                 RABBITMQ_SERVICE,
 		serverAddress:           RABBITMQ_SERVER,
 		ConsumeData:             nil,
 		PublishData:             nil,
@@ -48,9 +48,11 @@ func (r *RabbitMQ) ChangeServerAddress(serverAddress string) {
 
 /*
 Change the behaviour of the service.
+
+Use RabbitMQ config.go file at connector library to check for valid services flags.
 */
 func (r *RabbitMQ) ChangeService(service string) {
-	r.Service = service
+	r.service = service
 }
 
 /*

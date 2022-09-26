@@ -28,7 +28,7 @@ func (r *RabbitMQ) Acknowledge(success bool, messageId string, optionalRoute str
 	var messagesMap *sync.Map
 	var notifyQueueName string
 
-	switch r.Service {
+	switch r.service {
 	case RABBITMQ_RPC_SERVER:
 		messagesMap = r.RemoteProcedureCallData.RPCServer.Consumer.MessagesMap
 		notifyQueueName = r.RemoteProcedureCallData.RPCServer.Consumer.NotifyQueueName
@@ -37,9 +37,10 @@ func (r *RabbitMQ) Acknowledge(success bool, messageId string, optionalRoute str
 		messagesMap = r.RemoteProcedureCallData.RPCClient.Callback.MessagesMap
 		notifyQueueName = r.RemoteProcedureCallData.RPCClient.Callback.NotifyQueueName
 
+	case RABBITMQ_CLIENT:
+		log.Panic("in " + errorFileIdentification + ": not implemented rabbitmq service '" + r.service + "' have been added to RabbitMQ struct")
 	default:
-		messagesMap = r.ConsumeData.MessagesMap
-		notifyQueueName = r.ConsumeData.NotifyQueueName
+
 	}
 
 	mapObject, found := messagesMap.Load(acknowledger.MessageId)
@@ -62,7 +63,6 @@ func (r *RabbitMQ) Acknowledge(success bool, messageId string, optionalRoute str
 		}
 
 	case false:
-
 		err = message.Acknowledger.Nack(message.DeliveryTag, false, false)
 		if err != nil {
 			return errors.New("error negative acknowlodging message in " + errorFileIdentification + ": " + err.Error())
