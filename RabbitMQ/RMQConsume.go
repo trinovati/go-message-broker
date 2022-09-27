@@ -54,12 +54,10 @@ Will create a connection, prepare channels, declare queue and exchange case need
 
 Return channels for consuming messages and for checking the connection.
 */
-func (c *RMQConsume) connectConsumer(rabbitmq *RabbitMQ) (queueMessages <-chan amqp.Delivery, closeNotifyChannel chan *amqp.Error) {
+func (c *RMQConsume) prepareConsumer(rabbitmq *RabbitMQ) (queueMessageChannel <-chan amqp.Delivery, closeNotifyChannel chan *amqp.Error) {
 	errorFileIdentification := "RMQConsume.go at prepareChannel()"
 
 	for {
-		rabbitmq.Connect()
-
 		err := c.prepareChannel(rabbitmq)
 		if err != nil {
 			log.Println("***ERROR*** preparing channel in " + errorFileIdentification + ": " + err.Error())
@@ -74,17 +72,16 @@ func (c *RMQConsume) connectConsumer(rabbitmq *RabbitMQ) (queueMessages <-chan a
 			continue
 		}
 
-		messageChannel, err := c.Channel.Consume(c.QueueName, "", false, false, false, false, nil)
+		queueMessageChannel, err := c.Channel.Consume(c.QueueName, "", false, false, false, false, nil)
 		if err != nil {
 			log.Println("***ERROR*** producing consume channel in " + errorFileIdentification + ": " + err.Error())
 			time.Sleep(time.Second)
 			continue
 		}
 
-		closeNotifyChannel = make(chan *amqp.Error)
-		rabbitmq.Connection.NotifyClose(closeNotifyChannel)
+		closeNotifyChannel = rabbitmq.Connection.NotifyClose(make(chan *amqp.Error))
 
-		return messageChannel, closeNotifyChannel
+		return queueMessageChannel, closeNotifyChannel
 	}
 }
 

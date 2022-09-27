@@ -1,7 +1,6 @@
 package rabbitmq
 
 import (
-	"errors"
 	"log"
 	"strconv"
 	"time"
@@ -25,33 +24,18 @@ func (r *RabbitMQ) Publish(body string, newQueue string) (err error) {
 		publisher.PublishData.AccessKey = publisher.PublishData.QueueName
 	}
 
-	publisher.semaphore.GetPermission(1)
-	defer publisher.semaphore.ReleasePermission(1)
-	publisher.Connect()
-	defer publisher.Connection.Close()
-
-	err = publisher.PublishData.prepareChannel(publisher)
-	if err != nil {
-		return errors.New("error preparing channel in " + errorFileIdentification + ": " + err.Error())
-	}
-	defer publisher.PublishData.Channel.Close()
-
-	err = publisher.PublishData.prepareQueue(publisher)
-	if err != nil {
-		return errors.New("error preparing queue in " + errorFileIdentification + ": " + err.Error())
-	}
-
-	err = publisher.PublishData.Channel.Confirm(false)
-	if err != nil {
-		return errors.New("error configuring channel with Confirm() protocol in " + errorFileIdentification + ": " + err.Error())
-	}
-
-	notifyFlowChannel := publisher.PublishData.Channel.NotifyFlow(make(chan bool))
-	notifyAck, notifyNack := publisher.PublishData.Channel.NotifyConfirm(make(chan uint64), make(chan uint64))
-
 	message := amqp.Publishing{ContentType: "application/json", Body: []byte(body), DeliveryMode: amqp.Persistent}
 
 	for {
+		notifyFlowChannel, notifyAck, notifyNack, closeNotifyChannel, err := publisher.PublishData.preparePublisher(r)
+		if err != nil {
+			compelteError := "***ERROR*** Publishing stopped on queue '" + r.PublishData.QueueName + "' due to error preparing publisher in " + errorFileIdentification + ": " + err.Error()
+			log.Println(compelteError)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		defer publisher.PublishData.Channel.Close()
+
 		select {
 		case <-notifyFlowChannel:
 			waitingTimeForFlow := 10 * time.Second
@@ -59,21 +43,36 @@ func (r *RabbitMQ) Publish(body string, newQueue string) (err error) {
 			time.Sleep(waitingTimeForFlow)
 			continue
 
+		case closeNotification := <-closeNotifyChannel:
+			compelteError := "***ERROR*** in " + errorFileIdentification + ": publishing stopped on queue '" + r.PublishData.QueueName + "' due to closure of channel with reason '" + closeNotification.Reason + "'"
+			log.Println(compelteError)
+			time.Sleep(2 * time.Second)
+			continue
+
 		default:
 			err = publisher.PublishData.Channel.Publish(r.PublishData.ExchangeName, publisher.PublishData.AccessKey, true, false, message)
 			if err != nil {
-				return errors.New("error publishing message in " + errorFileIdentification + ": " + err.Error())
+				compelteError := "***ERROR*** error publishing message in " + errorFileIdentification + ": " + err.Error()
+				log.Println(compelteError)
+				time.Sleep(2 * time.Second)
+				continue
 			}
 
 			select {
+			case closeNotification := <-closeNotifyChannel:
+				compelteError := "***ERROR*** in " + errorFileIdentification + ": publishing stopped on queue '" + r.PublishData.QueueName + "' due to closure of channel with reason '" + closeNotification.Reason + "'"
+				log.Println(compelteError)
+				time.Sleep(2 * time.Second)
+				continue
+
 			case deniedNack := <-notifyNack:
 				waitingTimeForRedelivery := 10 * time.Second
-				log.Println("Publishing Nack " + strconv.Itoa(int(deniedNack)) + " denied by '" + publisher.PublishData.QueueName + "' queue, waiting " + waitingTimeForRedelivery.String() + " seconds to try redeliver.")
+				log.Println("Publishing denied by RabbitMQ server at queue '" + publisher.PublishData.QueueName + "' with Nack '" + strconv.Itoa(int(deniedNack)) + "', waiting " + waitingTimeForRedelivery.String() + " seconds to try redeliver.")
 				time.Sleep(waitingTimeForRedelivery)
 				continue
 
 			case successAck := <-notifyAck:
-				log.Println("Publishing Ack " + strconv.Itoa(int(successAck)) + " recieved at '" + publisher.PublishData.QueueName + "'.")
+				log.Println("Publishing success on queue '" + publisher.PublishData.QueueName + "' with Ack '" + strconv.Itoa(int(successAck)) + "'.")
 				return nil
 			}
 		}

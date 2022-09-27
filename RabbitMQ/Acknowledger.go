@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/streadway/amqp"
+
 	messagebroker "gitlab.com/aplicacao/trinovati-connector-message-brokers"
 )
 
@@ -74,12 +75,12 @@ func (r *RabbitMQ) Acknowledge(success bool, messageId string, optionalRoute str
 
 		go r.publishNotify(notifyTime+":"+string(message.Body), notifyQueueName)
 
-		if RABBITMQ_SERVICE == RABBITMQ_RPC_SERVER || RABBITMQ_SERVICE == RABBITMQ_RPC_CLIENT {
-			err = r.RPCServerCallbackPublish(acknowledger.Comment, message.CorrelationId, message.ReplyTo)
-			if err != nil {
-				return errors.New("error publishing failed callback in " + errorFileIdentification + ": " + err.Error())
-			}
-		}
+		// if RABBITMQ_SERVICE == RABBITMQ_RPC_SERVER || RABBITMQ_SERVICE == RABBITMQ_RPC_CLIENT {
+		// 	err = r.RPCServerCallbackPublish(acknowledger.Comment, message.CorrelationId, message.ReplyTo)
+		// 	if err != nil {
+		// 		return errors.New("error publishing failed callback in " + errorFileIdentification + ": " + err.Error())
+		// 	}
+		// }
 	}
 
 	return nil

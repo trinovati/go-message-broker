@@ -3,39 +3,41 @@ package rabbitmq
 import (
 	"errors"
 
-	messagebroker "gitlab.com/aplicacao/trinovati-connector-message-brokers"
-
 	"github.com/streadway/amqp"
+
+	messagebroker "gitlab.com/aplicacao/trinovati-connector-message-brokers"
 )
 
 /*
 Object containing methods to prepare a consumer or publisher to RabbitMQ service, operating as client, RPC client or RPC server.
 */
 type RabbitMQ struct {
-	service                 string
-	Connection              *amqp.Connection
-	serverAddress           string
-	ConsumeData             *RMQConsume
-	PublishData             *RMQPublish
-	RemoteProcedureCallData *RMQRemoteProcedureCall
-	semaphore               messagebroker.SemaphoreManager
+	terminanteOnConnectionError bool
+	service                     string
+	Connection                  *amqp.Connection
+	serverAddress               string
+	ConsumeData                 *RMQConsume
+	PublishData                 *RMQPublish
+	RemoteProcedureCallData     *RMQRemoteProcedureCall
 }
 
 /*
 Build a object containing methods to prepare a consumer or publisher to RabbitMQ service, operating as client, RPC client or RPC server.
 
+terminanteOnConnectionError defines if, in any moment, the connections fail or comes down, the service will panic or retry connection.
+
 By default, the object will try to access the environmental variable RABBITMQ_SERVER for connection purpose, in case of unexistent, it will use 'amqp://guest:guest@localhost:5672/' address.
 
 By default, the object will try to access the environmental variable RABBITMQ_SERVICE for behaviour purpose, in case of unexistent, it will use 'client' behaviour.
 */
-func NewRabbitMQ(semaphore messagebroker.SemaphoreManager) *RabbitMQ {
+func NewRabbitMQ(terminanteOnConnectionError bool) *RabbitMQ {
 	return &RabbitMQ{
-		service:                 RABBITMQ_SERVICE,
-		serverAddress:           RABBITMQ_SERVER,
-		ConsumeData:             nil,
-		PublishData:             nil,
-		RemoteProcedureCallData: nil,
-		semaphore:               semaphore,
+		terminanteOnConnectionError: terminanteOnConnectionError,
+		service:                     RABBITMQ_SERVICE,
+		serverAddress:               RABBITMQ_SERVER,
+		ConsumeData:                 nil,
+		PublishData:                 nil,
+		RemoteProcedureCallData:     nil,
 	}
 }
 
@@ -57,6 +59,8 @@ func (r *RabbitMQ) ChangeService(service string) {
 
 /*
 Populate the object, preparing for a RABBITMQ_CLIENT behaviour consume.
+
+The messages will be sended at the channel pass as argument.
 */
 func (r *RabbitMQ) PopulateConsume(exchangeName string, exchangeType string, queueName string, accessKey string, qos int, purgeBeforeStarting bool, queueConsumeChannel chan<- interface{}) {
 	r.ConsumeData = newRMQConsume(queueConsumeChannel)

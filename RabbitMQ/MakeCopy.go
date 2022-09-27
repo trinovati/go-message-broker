@@ -7,16 +7,16 @@ import (
 /*
 Make a copy of the RabbitMQ, generating a pointer to another object containing the some of information.
 
-Keeps semaphore pointer, config variables.
+Keeps connection pointer, config variables.
 
-Discards connection, channels, maps.
+Discards channels, maps.
 */
 func (r *RabbitMQ) MakeCopy() *RabbitMQ {
-	newRmqData := NewRabbitMQ(r.semaphore)
+	newRmqData := NewRabbitMQ(r.terminanteOnConnectionError)
 	newRmqData.ChangeServerAddress(r.serverAddress)
 	newRmqData.ChangeService(r.service)
 
-	newRmqData.Connection = nil
+	*newRmqData.Connection = *r.Connection
 
 	if r.ConsumeData != nil {
 		newRmqData.ConsumeData = newRMQConsume(r.ConsumeData.QueueConsumeChannel)
