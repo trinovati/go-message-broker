@@ -35,6 +35,7 @@ func (r *RabbitMQ) Connect() {
 		log.Println("Successful connection with RabbitMQ server '" + r.serverAddress + "'")
 
 		go r.keepConnection()
+		break
 	}
 }
 
