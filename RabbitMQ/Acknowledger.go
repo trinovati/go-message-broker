@@ -71,7 +71,7 @@ func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, o
 		}
 
 		notifyTime := time.Now().In(time.Local).Format("2006-01-02 15:04:05Z07:00")
-		notifyMessage := `"error_time":"` + notifyTime + `","error":"` + comment + `","message":"` + string(message.Body) + `"`
+		notifyMessage := `{"error_time":"` + notifyTime + `","error":"` + comment + `","message":"` + string(message.Body) + `"}`
 
 		go r.publishNotify(notifyMessage, notifyQueueName)
 
