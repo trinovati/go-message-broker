@@ -71,8 +71,9 @@ func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, o
 		}
 
 		notifyTime := time.Now().In(time.Local).Format("2006-01-02 15:04:05Z07:00")
+		notifyMessage := `"error_time":"` + notifyTime + `","error":"` + comment + `","message":"` + string(message.Body) + `"`
 
-		go r.publishNotify(notifyTime+":"+string(message.Body), notifyQueueName)
+		go r.publishNotify(notifyMessage, notifyQueueName)
 
 		if RABBITMQ_SERVICE == RABBITMQ_RPC_SERVER || RABBITMQ_SERVICE == RABBITMQ_RPC_CLIENT {
 			err = r.RPCServerCallbackPublish(acknowledger.Comment, message.CorrelationId, message.ReplyTo)
