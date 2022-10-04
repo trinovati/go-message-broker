@@ -21,8 +21,8 @@ optionalRoute is a string flag, path or destiny that the message broker will red
 
 comment is a commentary that can be anexed to the object as a sinalizer of errors or success.
 */
-func (r *RabbitMQ) Acknowledge(success bool, messageId string, optionalRoute string, comment string) (err error) {
-	acknowledger := messagebroker.NewMessageBrokerAcknowledger(success, messageId, optionalRoute, comment)
+func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, optionalRoute string) (err error) {
+	acknowledger := messagebroker.NewMessageBrokerAcknowledger(success, comment, messageId, optionalRoute)
 
 	errorFileIdentification := "RabbitMQ.go at Acknowledge()"
 	var messagesMap *sync.Map
@@ -70,7 +70,7 @@ func (r *RabbitMQ) Acknowledge(success bool, messageId string, optionalRoute str
 			return errors.New("error negative acknowlodging message in " + errorFileIdentification + ": " + err.Error())
 		}
 
-		notifyTime := time.Now().Format("2006-01-02 15:04:05")
+		notifyTime := time.Now().In(time.Local).Format("2006-01-02 15:04:05Z07:00")
 
 		go r.publishNotify(notifyTime+":"+string(message.Body), notifyQueueName)
 
