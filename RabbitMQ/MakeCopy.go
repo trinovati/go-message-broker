@@ -16,7 +16,7 @@ func (r *RabbitMQ) MakeCopy() *RabbitMQ {
 	newRmqData.ChangeServerAddress(r.serverAddress)
 	newRmqData.ChangeService(r.service)
 
-	*newRmqData.Connection = *r.Connection
+	newRmqData.Connection = r.Connection
 
 	if r.ConsumeData != nil {
 		newRmqData.ConsumeData = newRMQConsume(r.ConsumeData.QueueConsumeChannel)

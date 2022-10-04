@@ -19,6 +19,9 @@ func (r *RabbitMQ) ConsumeForever() {
 	for {
 		select {
 		case delivery := <-queueMessages:
+			if string(delivery.Body) == "" {
+				log.Println("locura")
+			}
 			messageId := strconv.FormatUint(delivery.DeliveryTag, 10)
 			r.ConsumeData.MessagesMap.Store(messageId, delivery)
 

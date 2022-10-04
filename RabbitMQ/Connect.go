@@ -16,10 +16,11 @@ If false, it will retry connection on the same server every time it is lost.
 func (r *RabbitMQ) Connect() {
 	errorFileIdentification := "RabbitMQ.go at Connect()"
 
-	for {
-		err := r.connect()
-		if err != nil {
+	var err error
 
+	for {
+		r.Connection, err = amqp.Dial(r.serverAddress)
+		if err != nil {
 			if r.terminanteOnConnectionError {
 				completeMessage := "error creating a connection linked to RabbitMQ server '" + r.serverAddress + "' in " + errorFileIdentification + ": " + err.Error() + "\nStopping service as requested!"
 				log.Panic(completeMessage)
@@ -48,6 +49,7 @@ func (r *RabbitMQ) keepConnection() {
 	closeNotifyChannel := r.Connection.NotifyClose(make(chan *amqp.Error))
 
 	for closeNotification := range closeNotifyChannel {
+		log.Println("connection dropped, retrying")
 
 		if r.terminanteOnConnectionError {
 			completeMessage := "in " + errorFileIdentification + ": connection with RabbitMQ server '" + r.serverAddress + "' have closed with reason: '" + closeNotification.Reason + "'\nStopping service as requested!"
@@ -64,13 +66,14 @@ func (r *RabbitMQ) keepConnection() {
 			}
 
 			for {
-				err = r.connect()
+				connection, err := amqp.Dial(r.serverAddress)
 				if err != nil {
 					completeError = "***ERROR*** error creating a connection linked to RabbitMQ server '" + r.serverAddress + "' in " + errorFileIdentification + ": " + err.Error()
 					log.Println(completeError)
 					time.Sleep(time.Second)
 					continue
 				}
+				*r.Connection = *connection
 
 				r.Connection.NotifyClose(closeNotifyChannel)
 
@@ -80,13 +83,4 @@ func (r *RabbitMQ) keepConnection() {
 			}
 		}
 	}
-}
-
-/*
-Dial for the server, storring the connection on the RabbitMQ object and returning nil in case of success.
-*/
-func (r *RabbitMQ) connect() (err error) {
-	r.Connection, err = amqp.Dial(r.serverAddress)
-
-	return err
 }
