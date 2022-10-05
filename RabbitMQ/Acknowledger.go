@@ -20,7 +20,7 @@ optionalRoute is a string flag, path or destiny that the message broker will red
 
 comment is a commentary that can be anexed to the object as a sinalizer of errors or success.
 */
-func (r *RabbitMQ) Acknowledge(success bool, messageId string, optionalRoute string, comment string) (err error) {
+func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, optionalRoute string) (err error) {
 	errorFileIdentification := "RabbitMQ.go at Acknowledge()"
 
 	mapObject, found := r.ConsumeData.UnacknowledgedDeliveryMap.Load(messageId)
