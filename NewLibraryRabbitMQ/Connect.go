@@ -3,6 +3,7 @@ package rabbitmq
 import (
 	"log"
 	"runtime"
+	"strings"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -17,22 +18,25 @@ If false, it will retry connection on the same server every time it is lost.
 func (r *RabbitMQ) Connect() *RabbitMQ {
 	errorFileIdentification := "RabbitMQ.go at Connect()"
 
+	serverAddress := strings.Split(strings.Split(r.Connection.serverAddress, "@")[1], ":")[0]
+
 	for {
 		connection, err := amqp.Dial(r.Connection.serverAddress)
 		if err != nil {
+
 			if r.Connection.terminateOnConnectionError {
-				completeMessage := "error creating a connection linked to RabbitMQ server '" + r.Connection.serverAddress + "' in " + errorFileIdentification + ": " + err.Error() + "\nStopping service as requested!"
+				completeMessage := "error creating a connection linked to RabbitMQ server '" + serverAddress + "' in " + errorFileIdentification + ": " + err.Error() + "\nStopping service as requested!"
 				log.Panic(completeMessage)
 
 			} else {
-				completeError := "***ERROR*** error creating a connection linked to RabbitMQ server '" + r.Connection.serverAddress + "' in " + errorFileIdentification + ": " + err.Error()
+				completeError := "***ERROR*** error creating a connection linked to RabbitMQ server '" + serverAddress + "' in " + errorFileIdentification + ": " + err.Error()
 				log.Println(completeError)
 				time.Sleep(time.Second)
 				continue
 			}
 		}
 
-		log.Println("Successful connection with RabbitMQ server '" + r.Connection.serverAddress + "'")
+		log.Println("Successful connection with RabbitMQ server '" + serverAddress + "'")
 
 		r.updateConnection(connection)
 
@@ -58,16 +62,18 @@ Method for reconnection in case of RabbitMQ server drops.
 func (r *RabbitMQ) keepConnection() {
 	errorFileIdentification := "RabbitMQ.go at keepConnection()"
 
+	serverAddress := strings.Split(strings.Split(r.Connection.serverAddress, "@")[1], ":")[0]
+
 	closeNotification := <-r.Connection.closureNotificationChannel
 
 	if r.Connection.terminateOnConnectionError {
-		completeMessage := "in " + errorFileIdentification + ": connection with RabbitMQ server '" + r.Connection.serverAddress + "' have closed with reason: '" + closeNotification.Reason + "'\nStopping service as requested!"
+		completeMessage := "in " + errorFileIdentification + ": connection with RabbitMQ server '" + serverAddress + "' have closed with reason: '" + closeNotification.Reason + "'\nStopping service as requested!"
 		log.Panic(completeMessage)
 
 	} else {
 		r.Connection.isOpen = false
 		r.Connection.lastConnectionError = closeNotification
-		log.Println("***ERROR*** in " + errorFileIdentification + ": connection with RabbitMQ server '" + r.Connection.serverAddress + "' have closed with reason: '" + closeNotification.Reason + "'")
+		log.Println("***ERROR*** in " + errorFileIdentification + ": connection with RabbitMQ server '" + serverAddress + "' have closed with reason: '" + closeNotification.Reason + "'")
 
 		err := r.Connection.Connection.Close()
 		if err != nil {
