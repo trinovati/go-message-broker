@@ -23,8 +23,6 @@ comment is a commentary that can be anexed to the object as a sinalizer of error
 func (r *RabbitMQ) Acknowledge(success bool, messageId string, optionalRoute string, comment string) (err error) {
 	errorFileIdentification := "RabbitMQ.go at Acknowledge()"
 
-	log.Println("ACKNOWLEDGER MESSAGE ID: " + messageId)
-
 	mapObject, found := r.ConsumeData.UnacknowledgedDeliveryMap.Load(messageId)
 	if !found {
 		return errors.New("in " + errorFileIdentification + " failed loading message id " + messageId + " from map")

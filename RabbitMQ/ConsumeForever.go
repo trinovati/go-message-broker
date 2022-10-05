@@ -13,14 +13,14 @@ Infinite loop consuming the queue linked to the RabbitMQ.ConsumeData object, pre
 
 Use only in go routines, otherwise the system will be forever blocked in the infinite loop trying to push into the channel.
 */
-func (r *RabbitMQ) ConsumeForever(i int) {
+func (r *RabbitMQ) ConsumeForever() {
 	r.Connection.semaphore.Lock()
 	incomingDeliveryChannel := r.prepareConsumer()
 	r.Connection.semaphore.Unlock()
 
 	connectionCheckChannel := make(chan bool)
 	unlockChannel := make(chan bool)
-	go r.connectionMonitor(connectionCheckChannel, unlockChannel, i)
+	go r.connectionMonitor(connectionCheckChannel, unlockChannel)
 
 	for {
 		select {
@@ -28,8 +28,6 @@ func (r *RabbitMQ) ConsumeForever(i int) {
 			if delivery.Body == nil {
 				continue
 			}
-
-			log.Println("RECIEVED AT " + strconv.Itoa(i))
 
 			messageId := strconv.FormatUint(delivery.DeliveryTag, 10)
 			r.ConsumeData.UnacknowledgedDeliveryMap.Store(messageId, delivery)
@@ -55,19 +53,15 @@ func (r *RabbitMQ) ConsumeForever(i int) {
 	}
 }
 
-func (r *RabbitMQ) connectionMonitor(connectionCheckChannel chan<- bool, unlockChannel <-chan bool, i int) {
+func (r *RabbitMQ) connectionMonitor(connectionCheckChannel chan<- bool, unlockChannel <-chan bool) {
 	for {
 		connectionId := r.ConnectionId
 
-		// log.Println("CHECKING CONNECTION AT " + strconv.Itoa(i))
 		r.Connection.semaphore.Lock()
-		// log.Println(connectionId)
-		// log.Println(r.Connection.UpdatedConnectionId)
 
 		isConnectionIdOutdated := connectionId != r.Connection.UpdatedConnectionId
 
 		if r.isConnectionDown() || isConnectionIdOutdated {
-			log.Println("CHECKING CONNECTION SENDED TO CHANNEL FROM " + strconv.Itoa(i))
 			connectionCheckChannel <- false
 			<-unlockChannel
 			r.Connection.semaphore.Unlock()

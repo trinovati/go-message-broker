@@ -192,11 +192,8 @@ func (r *RabbitMQ) prepareChannel() (err error) {
 	if r.Channel == nil || r.Channel.Channel == nil || r.Channel.Channel.IsClosed() {
 
 		if r.isConnectionDown() {
-			log.Println("CONEXAO REFEITA AQUI")
 			completeError := "in " + errorFileIdentification + ": connection dropped before creating channel, trying again soon"
 			return errors.New(completeError)
-		} else {
-			log.Println("CONEXAO NAO PRECISOU SER REFEITA")
 		}
 
 		channel, err := r.Connection.Connection.Channel()
@@ -204,7 +201,6 @@ func (r *RabbitMQ) prepareChannel() (err error) {
 			return errors.New("error creating a channel linked to RabbitMQ in " + errorFileIdentification + ": " + err.Error())
 		}
 		r.Channel.Channel = channel
-		log.Println("CANAL REFEITO AQUI")
 
 		if r.isConnectionDown() {
 			return errors.New("in " + errorFileIdentification + ": connection dropped before configuring publish channel, trying again soon")
@@ -215,8 +211,6 @@ func (r *RabbitMQ) prepareChannel() (err error) {
 			return errors.New("error configuring channel with Confirm() protocol in " + errorFileIdentification + ": " + err.Error())
 		}
 
-	} else {
-		log.Println("CANAL E CONEXAO NAO PRECISOU SER REFEITA")
 	}
 
 	if r.isConnectionDown() {

@@ -6,10 +6,9 @@ import (
 	"testing"
 	"time"
 
+	amqp "github.com/rabbitmq/amqp091-go"
 	messagebroker "gitlab.com/aplicacao/trinovati-connector-message-brokers"
 	rabbitmq "gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ"
-
-	"github.com/streadway/amqp"
 )
 
 type testTagProducer struct {
@@ -34,10 +33,6 @@ func TestPopulatePublishRabbitMQ(t *testing.T) {
 	exchangeType := "type"
 	queueName := "queue_name"
 	queueAccessKey := "access_key"
-
-	semaphore := &testSemaphore{}
-
-	messageBroker := rabbitmq.NewRabbitMQ(semaphore)
 
 	messageBroker.PopulatePublish(exchangeName, exchangeType, queueName, queueAccessKey)
 
@@ -79,10 +74,6 @@ func TestPopulateConsumeRabbitMQ(t *testing.T) {
 	qos := 2
 	purgeBeforeStarting := true
 	queueConsumeChannel := make(chan interface{})
-
-	semaphore := &testSemaphore{}
-
-	messageBroker := rabbitmq.NewRabbitMQ(semaphore)
 
 	messageBroker.PopulateConsume(exchangeName, exchangeType, queueName, queueAccessKey, qos, purgeBeforeStarting, queueConsumeChannel)
 
@@ -148,9 +139,6 @@ func TestPopulateRPCClient(t *testing.T) {
 
 	expectedNotifyQueueName := "_" + callbackExchangeName + "__failed_messages"
 
-	semaphore := &testSemaphore{}
-
-	messageBroker := rabbitmq.NewRabbitMQ(semaphore)
 	messageBroker.ChangeService(rabbitmq.RABBITMQ_RPC_CLIENT)
 
 	messageBroker.PopulateRPCClient(RPCExchangeName, RPCExchangeType, RPCQueueName, RPCAccessKey, callbackExchangeName, callbackExchangeType, callbackQueueName, callbackAccessKey, nil)
@@ -234,9 +222,6 @@ func TestPopulateRPCServer(t *testing.T) {
 
 	expectedNotifyQueueName := "_" + RPCexchangeName + "__failed_messages"
 
-	semaphore := &testSemaphore{}
-
-	messageBroker := rabbitmq.NewRabbitMQ(semaphore)
 	messageBroker.ChangeService(rabbitmq.RABBITMQ_RPC_SERVER)
 
 	messageBroker.PopulateRPCServer(RPCexchangeName, RPCexchangeType, RPCQueueName, RPCQueueAccessKey, RPCqos, RPCpurgeBeforeStarting, callbackExchangeName, callbackExchangeType, callbackQueueName, callbackAccessKey, queueConsumeChannel)
@@ -332,9 +317,6 @@ func TestMakeCopyRabbitMQ(t *testing.T) {
 	queueConsumeChannel := make(chan interface{})
 
 	tagProducer := &testTagProducer{}
-	semaphore := &testSemaphore{}
-
-	messageBroker := rabbitmq.NewRabbitMQ(semaphore)
 
 	messageBroker.PopulatePublish(publishExchangeName, publishExchangeType, publishQueueName, publishQueueAccessKey)
 	messageBroker.PopulateConsume(consumerExchangeName, consumerExchangeType, consumerQueueName, consumerQueueAccessKey, qos, purgeBeforeStarting, queueConsumeChannel)
@@ -519,11 +501,6 @@ func TestPublishRabbitMQ(t *testing.T) {
 	consumerAccessKey := consumerQueueName
 	consumerQos := 0
 
-	semaphore := &testSemaphore{}
-
-	messageBrokerPublisher := rabbitmq.NewRabbitMQ(semaphore)
-	messageBrokerConsumer := rabbitmq.NewRabbitMQ(semaphore)
-
 	messageBrokerPublisher.PopulatePublish(publishExchangeName, publishExchangeType, publishQueueName, publishQueueAccessKey)
 
 	messageBrokerConsumer.Connect()
@@ -611,11 +588,6 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 	qos := 0
 	purgeBeforeStarting := true
 	queueConsumeChannel := make(chan interface{})
-
-	semaphore := &testSemaphore{}
-
-	messageBrokerConsumer := rabbitmq.NewRabbitMQ(semaphore)
-	messageBrokerPublisher := rabbitmq.NewRabbitMQ(semaphore)
 
 	messageBrokerConsumer.PopulateConsume(consumerExchangeName, consumerExchangeType, consumerQueueName, consumerQueueAccessKey, qos, purgeBeforeStarting, queueConsumeChannel)
 
@@ -812,11 +784,7 @@ func TestRPCServerResquestConsumeForever(t *testing.T) {
 	callbackQueueName := RPCQueueName + "__callback"
 	callbackAccessKey := callbackQueueName
 
-	semaphore := &testSemaphore{}
-
-	messageBrokerRequestConsumer := rabbitmq.NewRabbitMQ(semaphore)
 	messageBrokerRequestConsumer.ChangeService(rabbitmq.RABBITMQ_RPC_SERVER)
-	messageBrokerPublisher := rabbitmq.NewRabbitMQ(semaphore)
 	messageBrokerPublisher.ChangeService(rabbitmq.RABBITMQ_RPC_SERVER)
 
 	messageBrokerRequestConsumer.PopulateRPCServer(RPCExchangeName, RPCExchangeType, RPCQueueName, RPCAccessKey, RPCQos, RPCPurgeBeforeStarting, callbackExchangeName, callbackExchangeType, callbackQueueName, callbackAccessKey, RPCQueueConsumeChannel)
@@ -919,11 +887,7 @@ func TestRPCServerCallbackPublish(t *testing.T) {
 
 	RPCQueueConsumeChannel := make(chan interface{})
 
-	semaphore := &testSemaphore{}
-
-	messageBrokerResponsePublisher := rabbitmq.NewRabbitMQ(semaphore)
 	messageBrokerResponsePublisher.ChangeService(rabbitmq.RABBITMQ_RPC_SERVER)
-	messageBrokerConsumer := rabbitmq.NewRabbitMQ(semaphore)
 	messageBrokerConsumer.ChangeService(rabbitmq.RABBITMQ_RPC_SERVER)
 
 	messageBrokerResponsePublisher.PopulateRPCServer(RPCExchangeName, RPCExchangeType, RPCQueueName, RPCAccessKey, RPCQos, RPCPurgeBeforeStarting, callbackExchangeName, callbackExchangeType, callbackQueueName, callbackAccessKey, RPCQueueConsumeChannel)
@@ -1015,11 +979,7 @@ func TestRPCClientCallbackConsume(t *testing.T) {
 	callbackQueueName := RPCQueueName + "__callback"
 	callbackAccessKey := callbackQueueName
 
-	semaphore := &testSemaphore{}
-
-	messageBrokerResponseConsumer := rabbitmq.NewRabbitMQ(semaphore)
 	messageBrokerResponseConsumer.ChangeService(rabbitmq.RABBITMQ_RPC_CLIENT)
-	messageBrokerPublisher := rabbitmq.NewRabbitMQ(semaphore)
 	messageBrokerPublisher.ChangeService(rabbitmq.RABBITMQ_RPC_CLIENT)
 
 	messageBrokerResponseConsumer.PopulateRPCClient(RPCExchangeName, RPCExchangeType, RPCQueueName, RPCAccessKey, callbackExchangeName, callbackExchangeType, callbackQueueName, callbackAccessKey, nil)

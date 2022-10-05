@@ -60,7 +60,6 @@ func (r *RabbitMQ) Publish(body string, newQueue string) (err error) {
 				continue
 			}
 
-			log.Println(confirmation)
 			success := confirmation.Wait()
 			if success {
 				log.Println("Publishing success on queue '" + publisher.PublishData.QueueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
