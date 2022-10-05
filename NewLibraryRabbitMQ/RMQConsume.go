@@ -59,7 +59,7 @@ func (r *RabbitMQ) prepareConsumer() (incomingDeliveryChannel <-chan amqp.Delive
 	for {
 		UpdatedConnectionId := r.Connection.UpdatedConnectionId
 
-		err := r.ConsumeData.prepareChannel(r)
+		err := r.prepareChannel()
 		if err != nil {
 			log.Println("***ERROR*** preparing channel in " + errorFileIdentification + ": " + err.Error())
 			time.Sleep(time.Second)
@@ -93,48 +93,6 @@ func (r *RabbitMQ) prepareConsumer() (incomingDeliveryChannel <-chan amqp.Delive
 }
 
 /*
-Prepare a channel linked to RabbitMQ connection for publishing.
-
-In case of unexistent exchange, it will create the exchange.
-*/
-func (c *RMQConsume) prepareChannel(rabbitmq *RabbitMQ) (err error) {
-	errorFileIdentification := "RMQConsume.go at prepareChannel()"
-
-	if rabbitmq.Channel == nil || rabbitmq.Channel.Channel == nil || rabbitmq.Channel.Channel.IsClosed() {
-
-		if rabbitmq.isConnectionDown() {
-			log.Println("CONEXAO REFEITA AQUI")
-			completeError := "in " + errorFileIdentification + ": connection dropped before creating channel, trying again soon"
-			return errors.New(completeError)
-		} else {
-			log.Println("CONEXAO NAO PRECISOU SER REFEITA")
-		}
-
-		channel, err := rabbitmq.Connection.Connection.Channel()
-		if err != nil {
-			return errors.New("error creating a channel linked to RabbitMQ in " + errorFileIdentification + ": " + err.Error())
-		}
-		rabbitmq.Channel.Channel = channel
-		log.Println("CANAL REFEITO AQUI")
-
-	} else {
-		log.Println("CANAL E CONEXAO NAO PRECISOU SER REFEITA")
-	}
-
-	if rabbitmq.isConnectionDown() {
-		completeError := "in " + errorFileIdentification + ": connection dropped before declaring exchange, trying again soon"
-		return errors.New(completeError)
-	}
-
-	err = rabbitmq.Channel.Channel.ExchangeDeclare(c.ExchangeName, c.ExchangeType, true, false, false, false, nil)
-	if err != nil {
-		return errors.New("error creating RabbitMQ exchange in " + errorFileIdentification + ": " + err.Error())
-	}
-
-	return nil
-}
-
-/*
 Prepare a queue linked to RabbitMQ channel for consuming.
 
 In case of unexistent queue, it will create the queue.
@@ -147,6 +105,16 @@ It will purge the queue before consuming case ordered to.
 */
 func (c *RMQConsume) prepareQueue(rabbitmq *RabbitMQ) (err error) {
 	errorFileIdentification := "RMQConsume.go at prepareQueue()"
+
+	if rabbitmq.isConnectionDown() {
+		completeError := "in " + errorFileIdentification + ": connection dropped before declaring exchange, trying again soon"
+		return errors.New(completeError)
+	}
+
+	err = rabbitmq.Channel.Channel.ExchangeDeclare(c.ExchangeName, c.ExchangeType, true, false, false, false, nil)
+	if err != nil {
+		return errors.New("error creating RabbitMQ exchange in " + errorFileIdentification + ": " + err.Error())
+	}
 
 	if rabbitmq.isConnectionDown() {
 		completeError := "in " + errorFileIdentification + ": connection dropped before declaring queue, trying again soon"

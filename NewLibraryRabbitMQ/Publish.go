@@ -33,32 +33,36 @@ func (r *RabbitMQ) Publish(body string, newQueue string) (err error) {
 	message := amqp.Publishing{ContentType: "application/json", Body: []byte(body), DeliveryMode: amqp.Persistent}
 
 	for {
-		err := publisher.PublishData.preparePublisher(r)
+		publisher.Connection.semaphore.Lock()
+		notifyFlowChannel := r.preparePublisher()
 		if err != nil {
 			compelteError := "***ERROR*** Publishing stopped on queue '" + r.PublishData.QueueName + "' due to error preparing publisher in " + errorFileIdentification + ": " + err.Error()
 			log.Println(compelteError)
-			time.Sleep(2 * time.Second)
+			publisher.Connection.semaphore.Unlock()
+			time.Sleep(time.Second)
 			continue
 		}
+		publisher.Connection.semaphore.Unlock()
 
 		select {
-		case <-*r.PublishData.notifyFlowChannel:
+		case <-notifyFlowChannel:
 			waitingTimeForFlow := 10 * time.Second
 			log.Println("Queue '" + publisher.PublishData.QueueName + "' flow is closed, waiting " + waitingTimeForFlow.String() + " seconds to try publish again.")
 			time.Sleep(waitingTimeForFlow)
 			continue
 
 		default:
-			confirmation, err := publisher.PublishData.Channel.PublishWithDeferredConfirmWithContext(context.Background(), r.PublishData.ExchangeName, publisher.PublishData.AccessKey, true, false, message)
+			confirmation, err := publisher.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), r.PublishData.ExchangeName, publisher.PublishData.AccessKey, true, false, message)
 			if err != nil {
 				compelteError := "***ERROR*** error publishing message in " + errorFileIdentification + ": " + err.Error()
 				log.Println(compelteError)
-				time.Sleep(2 * time.Second)
+				time.Sleep(time.Second)
 				continue
 			}
 
-			seccess := confirmation.Wait()
-			if seccess {
+			log.Println(confirmation)
+			success := confirmation.Wait()
+			if success {
 				log.Println("Publishing success on queue '" + publisher.PublishData.QueueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
 				return nil
 			}

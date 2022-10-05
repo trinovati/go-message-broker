@@ -146,7 +146,6 @@ func (r *RabbitMQ) GetPopulatedDataFrom(rabbitmq *RabbitMQ) *RabbitMQ {
 
 	if rabbitmq.PublishData != nil {
 		r.PublishData = &RMQPublish{
-			Channel:      r.PublishData.Channel,
 			ExchangeName: rabbitmq.PublishData.ExchangeName,
 			ExchangeType: rabbitmq.PublishData.ExchangeType,
 			QueueName:    rabbitmq.PublishData.QueueName,
@@ -180,6 +179,52 @@ func (r *RabbitMQ) PopulatePublish(exchangeName string, exchangeType string, que
 	r.PublishData.populate(exchangeName, exchangeType, queueName, accessKey)
 
 	return r
+}
+
+/*
+Prepare a channel linked to RabbitMQ connection for publishing.
+
+In case of unexistent exchange, it will create the exchange.
+*/
+func (r *RabbitMQ) prepareChannel() (err error) {
+	errorFileIdentification := "RabbitMQ.go at prepareChannel()"
+
+	if r.Channel == nil || r.Channel.Channel == nil || r.Channel.Channel.IsClosed() {
+
+		if r.isConnectionDown() {
+			log.Println("CONEXAO REFEITA AQUI")
+			completeError := "in " + errorFileIdentification + ": connection dropped before creating channel, trying again soon"
+			return errors.New(completeError)
+		} else {
+			log.Println("CONEXAO NAO PRECISOU SER REFEITA")
+		}
+
+		channel, err := r.Connection.Connection.Channel()
+		if err != nil {
+			return errors.New("error creating a channel linked to RabbitMQ in " + errorFileIdentification + ": " + err.Error())
+		}
+		r.Channel.Channel = channel
+		log.Println("CANAL REFEITO AQUI")
+
+		if r.isConnectionDown() {
+			return errors.New("in " + errorFileIdentification + ": connection dropped before configuring publish channel, trying again soon")
+		}
+
+		err = r.Channel.Channel.Confirm(false)
+		if err != nil {
+			return errors.New("error configuring channel with Confirm() protocol in " + errorFileIdentification + ": " + err.Error())
+		}
+
+	} else {
+		log.Println("CANAL E CONEXAO NAO PRECISOU SER REFEITA")
+	}
+
+	if r.isConnectionDown() {
+		completeError := "in " + errorFileIdentification + ": connection dropped before declaring exchange, trying again soon"
+		return errors.New(completeError)
+	}
+
+	return nil
 }
 
 /*
