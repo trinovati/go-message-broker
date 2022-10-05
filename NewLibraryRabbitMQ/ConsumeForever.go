@@ -14,10 +14,13 @@ Infinite loop consuming the queue linked to the RabbitMQ.ConsumeData object, pre
 Use only in go routines, otherwise the system will be forever blocked in the infinite loop trying to push into the channel.
 */
 func (r *RabbitMQ) ConsumeForever(i int) {
+	r.Connection.semaphore.Lock()
 	incomingDeliveryChannel := r.prepareConsumer()
+	r.Connection.semaphore.Unlock()
 
 	connectionCheckChannel := make(chan bool)
-	go r.connectionMonitor(connectionCheckChannel, i)
+	unlockChannel := make(chan bool)
+	go r.connectionMonitor(connectionCheckChannel, unlockChannel, i)
 
 	for {
 		select {
@@ -47,11 +50,12 @@ func (r *RabbitMQ) ConsumeForever(i int) {
 			log.Println(completeError)
 
 			incomingDeliveryChannel = r.prepareConsumer()
+			unlockChannel <- true
 		}
 	}
 }
 
-func (r *RabbitMQ) connectionMonitor(connectionCheckChannel chan<- bool, i int) {
+func (r *RabbitMQ) connectionMonitor(connectionCheckChannel chan<- bool, unlockChannel <-chan bool, i int) {
 	for {
 		connectionId := r.ConnectionId
 
@@ -65,10 +69,13 @@ func (r *RabbitMQ) connectionMonitor(connectionCheckChannel chan<- bool, i int) 
 		if r.isConnectionDown() || isConnectionIdOutdated {
 			log.Println("CHECKING CONNECTION SENDED TO CHANNEL FROM " + strconv.Itoa(i))
 			connectionCheckChannel <- false
+			<-unlockChannel
+			r.Connection.semaphore.Unlock()
 			continue
-		}
 
-		r.Connection.semaphore.Unlock()
-		time.Sleep(500 * time.Millisecond)
+		} else {
+			r.Connection.semaphore.Unlock()
+			time.Sleep(500 * time.Millisecond)
+		}
 	}
 }

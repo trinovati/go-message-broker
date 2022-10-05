@@ -56,8 +56,6 @@ Return channels for consuming messages and for checking the connection.
 func (r *RabbitMQ) prepareConsumer() (incomingDeliveryChannel <-chan amqp.Delivery) {
 	errorFileIdentification := "RMQConsume.go at prepareChannel()"
 
-	log.Println(r.Connection.semaphore.TryLock())
-
 	for {
 		UpdatedConnectionId := r.Connection.UpdatedConnectionId
 
@@ -90,8 +88,6 @@ func (r *RabbitMQ) prepareConsumer() (incomingDeliveryChannel <-chan amqp.Delive
 
 		r.ConnectionId = UpdatedConnectionId
 
-		r.Connection.semaphore.Unlock()
-
 		return incomingDeliveryChannel
 	}
 }
@@ -105,10 +101,13 @@ func (c *RMQConsume) prepareChannel(rabbitmq *RabbitMQ) (err error) {
 	errorFileIdentification := "RMQConsume.go at prepareChannel()"
 
 	if rabbitmq.Channel == nil || rabbitmq.Channel.Channel == nil || rabbitmq.Channel.Channel.IsClosed() {
-		log.Println("CONEXAO REFEITA AQUI")
+
 		if rabbitmq.isConnectionDown() {
+			log.Println("CONEXAO REFEITA AQUI")
 			completeError := "in " + errorFileIdentification + ": connection dropped before creating channel, trying again soon"
 			return errors.New(completeError)
+		} else {
+			log.Println("CONEXAO NAO PRECISOU SER REFEITA")
 		}
 
 		channel, err := rabbitmq.Connection.Connection.Channel()
@@ -116,9 +115,10 @@ func (c *RMQConsume) prepareChannel(rabbitmq *RabbitMQ) (err error) {
 			return errors.New("error creating a channel linked to RabbitMQ in " + errorFileIdentification + ": " + err.Error())
 		}
 		rabbitmq.Channel.Channel = channel
+		log.Println("CANAL REFEITO AQUI")
 
 	} else {
-		log.Println("CONEXAO NAO PRECISOU SER REFEITA")
+		log.Println("CANAL E CONEXAO NAO PRECISOU SER REFEITA")
 	}
 
 	if rabbitmq.isConnectionDown() {

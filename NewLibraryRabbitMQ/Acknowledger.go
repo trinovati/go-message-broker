@@ -51,8 +51,8 @@ func (r *RabbitMQ) Acknowledge(success bool, messageId string, optionalRoute str
 				return errors.New("error negative acknowlodging message in " + errorFileIdentification + ": " + err.Error())
 			}
 
-			notifyTime := time.Now().Format("2006-01-02 15:04:05")
-			notifyMessage := `"error_time":"` + notifyTime + `","error":"` + comment + `","message":"` + string(message.Body) + `"`
+			notifyTime := time.Now().Format("2006-01-02 15:04:05Z07:00")
+			notifyMessage := `{"error_time":"` + notifyTime + `","error":"` + comment + `","message":"` + string(message.Body) + `"}`
 
 			// if RABBITMQ_SERVICE == RABBITMQ_RPC_SERVER || RABBITMQ_SERVICE == RABBITMQ_RPC_CLIENT {
 			// 	err = r.RPCServerCallbackPublish(acknowledger.Comment, message.CorrelationId, message.ReplyTo)
