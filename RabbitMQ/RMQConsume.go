@@ -10,7 +10,7 @@ import (
 )
 
 /*
-Object that holds information needed for consuming from RabbitMQ.
+Object that holds all information needed for consuming from RabbitMQ queue.
 */
 type RMQConsume struct {
 	OutgoingDeliveryChannel    chan<- interface{}
@@ -25,7 +25,7 @@ type RMQConsume struct {
 }
 
 /*
-Create a new object that can hold all information needed to consume from a RabbitMQ queue.
+Builds a new object that holds all information needed for consuming from RabbitMQ queue.
 */
 func newRMQConsume() *RMQConsume {
 	return &RMQConsume{
@@ -51,7 +51,9 @@ func (c *RMQConsume) populate(exchangeName string, exchangeType string, QueueNam
 /*
 Will create a connection, prepare channels, declare queue and exchange case needed.
 
-Return channels for consuming messages and for checking the connection.
+If an error occurs, it will restart and retry all the process until the consumer is fully prepared.
+
+Return a channel of incoming deliveries.
 */
 func (r *RabbitMQ) prepareConsumer() (incomingDeliveryChannel <-chan amqp.Delivery) {
 	errorFileIdentification := "RMQConsume.go at prepareChannel()"
@@ -94,6 +96,8 @@ func (r *RabbitMQ) prepareConsumer() (incomingDeliveryChannel <-chan amqp.Delive
 
 /*
 Prepare a queue linked to RabbitMQ channel for consuming.
+
+In case of unexistent exchange, it will create the exchange.
 
 In case of unexistent queue, it will create the queue.
 

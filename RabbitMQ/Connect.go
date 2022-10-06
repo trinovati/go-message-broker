@@ -4,16 +4,53 @@ import (
 	"log"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 /*
+Object used to reference a amqp.Connection and store all the data needed to keep track of its health.
+
+It has a semaphore to controll assincronus access to server, and suports shared access by multiple objects.
+*/
+type ConnectionData struct {
+	UpdatedConnectionId        uint64
+	serverAddress              string
+	terminateOnConnectionError bool
+	isOpen                     bool
+	Connection                 *amqp.Connection
+	semaphore                  *sync.Mutex
+	lastConnectionError        *amqp.Error
+	closureNotificationChannel chan *amqp.Error
+}
+
+/*
+Build an object used to reference a amqp.Connection and store all the data needed to keep track of its health.
+
+It has a semaphore to controll assincronus access to server, and suports shared access by multiple objects.
+*/
+func newConnectionData() *ConnectionData {
+	return &ConnectionData{
+		serverAddress:              RABBITMQ_SERVER,
+		UpdatedConnectionId:        0,
+		Connection:                 &amqp.Connection{},
+		semaphore:                  &sync.Mutex{},
+		isOpen:                     false,
+		terminateOnConnectionError: false,
+		lastConnectionError:        nil,
+		closureNotificationChannel: nil,
+	}
+}
+
+/*
 Connect to the RabbitMQ server and open a goroutine for the connection maintance.
 
-If terminanteOnConnectionError variable is true at RabbitMQ object, any problem with connection will cause a panic.
+If terminanteOnConnectionError is true at RabbitMQ object, any problem with connection will cause a panic.
 If false, it will retry connection on the same server every time it is lost.
+
+It is safe to share connection by multiple objects.
 */
 func (r *RabbitMQ) Connect() *RabbitMQ {
 	errorFileIdentification := "RabbitMQ.go at Connect()"
@@ -46,6 +83,13 @@ func (r *RabbitMQ) Connect() *RabbitMQ {
 	}
 }
 
+/*
+Refresh the closureNotificationChannel for helthyness.
+
+Reference the newly created amqp.Connection, assuring assincronus concurrent access to multiple objects.
+
+Refresh the connection id for controll of references.
+*/
 func (r *RabbitMQ) updateConnection(connection *amqp.Connection) {
 	r.Connection.closureNotificationChannel = connection.NotifyClose(make(chan *amqp.Error))
 
@@ -98,6 +142,9 @@ func (r *RabbitMQ) keepConnection() {
 	}
 }
 
+/*
+Check the connection, returning true if its down and unavailble.
+*/
 func (r *RabbitMQ) isConnectionDown() bool {
 	return !r.Connection.isOpen
 }

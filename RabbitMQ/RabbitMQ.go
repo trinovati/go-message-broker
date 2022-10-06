@@ -3,7 +3,6 @@ package rabbitmq
 import (
 	"errors"
 	"log"
-	"sync"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -21,42 +20,19 @@ type RabbitMQ struct {
 }
 
 /*
-Object containing the control information for maintance of the connection.
+Object used to reference a amqp.Channel address.
 
-It can be used for
+Since the connection have a intimate relation with the address of amqp.Channel, it could not be moved to another memory position for
+shared channel purposes, so all shared channels points toward this object, and in case of channel remake, this object will point towards it.
 */
-type ConnectionData struct {
-	UpdatedConnectionId        uint64
-	serverAddress              string
-	terminateOnConnectionError bool
-	isOpen                     bool
-	Connection                 *amqp.Connection
-	semaphore                  *sync.Mutex
-	lastConnectionError        *amqp.Error
-	closureNotificationChannel chan *amqp.Error
-}
-
-func newConnectionData() *ConnectionData {
-	return &ConnectionData{
-		serverAddress:              RABBITMQ_SERVER,
-		UpdatedConnectionId:        0,
-		Connection:                 &amqp.Connection{},
-		semaphore:                  &sync.Mutex{},
-		isOpen:                     false,
-		terminateOnConnectionError: false,
-		lastConnectionError:        nil,
-		closureNotificationChannel: nil,
-	}
-}
-
 type Channel struct {
 	Channel *amqp.Channel
 }
 
 /*
-Build a object containing methods to prepare a consumer or publisher to RabbitMQ service, operating as client, RPC client or RPC server.
+Build a object containing methods to prepare a consumer or publisher to RabbitMQ service.
 
-terminateOnConnectionError defines if, in any moment, the connections fail or comes down, the service will panic or retry connection.
+terminateOnConnectionError defines if, at any moment, the connections fail or comes down, the service will panic or retry connection.
 
 By default, the object will try to access the environmental variable RABBITMQ_SERVER for connection purpose, in case of unexistent, it will use 'amqp://guest:guest@localhost:5672/' address.
 
@@ -82,12 +58,18 @@ func (r *RabbitMQ) WithServerAddress(serverAddress string) *RabbitMQ {
 	return r
 }
 
+/*
+Configure the object to kill the program at any problem with RabbitMQ server.
+*/
 func (r *RabbitMQ) WithTerminateOnConnectionError(terminate bool) *RabbitMQ {
 	r.Connection.terminateOnConnectionError = terminate
 
 	return r
 }
 
+/*
+Will make both objects share the same connection information and server interaction semaphore for assincronus access.
+*/
 func (r *RabbitMQ) SharesConnectionWith(rabbitmq *RabbitMQ) *RabbitMQ {
 	errorFileIdentification := "RabbitMQ.go at SharesConnectionWith()"
 
@@ -104,6 +86,9 @@ func (r *RabbitMQ) SharesConnectionWith(rabbitmq *RabbitMQ) *RabbitMQ {
 	return r
 }
 
+/*
+Will make both objects share the same channel, connection information, and server interaction semaphore for assincronus access.
+*/
 func (r *RabbitMQ) SharesChannelWith(rabbitmq *RabbitMQ) *RabbitMQ {
 	errorFileIdentification := "RabbitMQ.go at SharesChannelWith()"
 
@@ -127,6 +112,13 @@ func (r *RabbitMQ) SharesChannelWith(rabbitmq *RabbitMQ) *RabbitMQ {
 	return r
 }
 
+/*
+Will copy data not linked to connection or channels to the object.
+
+In case of PublishData, this have the same effect as PopulatePublish().
+
+In case of ConsumeData, besides the effect of PopulateConsume(), both objects will share the UnacknowledgedDeliveryMap.
+*/
 func (r *RabbitMQ) GetPopulatedDataFrom(rabbitmq *RabbitMQ) *RabbitMQ {
 	r.service = rabbitmq.service
 
@@ -157,24 +149,27 @@ func (r *RabbitMQ) GetPopulatedDataFrom(rabbitmq *RabbitMQ) *RabbitMQ {
 }
 
 /*
-Populate the object, preparing for a RABBITMQ_CLIENT behaviour consume.
+Populate the object for a consume behaviour.
 
-The messages will be sended at the channel pass as argument.
+The messages will be sended at the channel passed to queueConsumeChannel.
 */
 func (r *RabbitMQ) PopulateConsume(exchangeName string, exchangeType string, queueName string, accessKey string, qos int, purgeBeforeStarting bool, queueConsumeChannel chan<- interface{}) *RabbitMQ {
 	if r.ConsumeData == nil {
 		r.ConsumeData = newRMQConsume()
 	}
+
 	r.ConsumeData.populate(exchangeName, exchangeType, queueName, accessKey, qos, purgeBeforeStarting, queueConsumeChannel)
 
 	return r
 }
 
 /*
-Populate the object, preparing for a RABBITMQ_CLIENT behaviour publish.
+Populate the object for a publish behaviour.
 */
 func (r *RabbitMQ) PopulatePublish(exchangeName string, exchangeType string, queueName string, accessKey string) *RabbitMQ {
-	r.PublishData = newRMQPublish()
+	if r.PublishData == nil {
+		r.PublishData = newRMQPublish()
+	}
 
 	r.PublishData.populate(exchangeName, exchangeType, queueName, accessKey)
 
@@ -184,7 +179,7 @@ func (r *RabbitMQ) PopulatePublish(exchangeName string, exchangeType string, que
 /*
 Prepare a channel linked to RabbitMQ connection for publishing.
 
-In case of unexistent exchange, it will create the exchange.
+It puts the channel in confirm mode, so any publishing done will have a response from the server.
 */
 func (r *RabbitMQ) prepareChannel() (err error) {
 	errorFileIdentification := "RabbitMQ.go at prepareChannel()"
@@ -213,39 +208,8 @@ func (r *RabbitMQ) prepareChannel() (err error) {
 
 	}
 
-	if r.isConnectionDown() {
-		completeError := "in " + errorFileIdentification + ": connection dropped before declaring exchange, trying again soon"
-		return errors.New(completeError)
-	}
-
 	return nil
 }
-
-/*
-Populate the object, preparing for a RABBITMQ_RPC_CLIENT behaviour.
-*/
-// func (r *RabbitMQ) PopulateRPCClient(RPCExchangeName string, RPCExchangeType string, RPCQueueName string, RPCAccessKey string, callbackExchangeName string, callbackExchangeType string, callbackQueueName string, CallbackAccessKey string, tagProducerManager messagebroker.TagProducerManager) {
-// 	if r.RemoteProcedureCallData == nil {
-// 		r.RemoteProcedureCallData = newRMQRemoteProcedureCall()
-// 	}
-
-// 	r.RemoteProcedureCallData.RPCClient = newRPCClient()
-
-// 	r.RemoteProcedureCallData.RPCClient.populate(RPCExchangeName, RPCExchangeType, RPCQueueName, RPCAccessKey, callbackExchangeName, callbackExchangeType, callbackQueueName, CallbackAccessKey, tagProducerManager)
-// }
-
-/*
-Populate the object, preparing for a RABBITMQ_RPC_SERVER behaviour.
-*/
-// func (r *RabbitMQ) PopulateRPCServer(RPCExchangeName string, RPCExchangeType string, RPCQueueName string, RPCAccessKey string, RPCQos int, RPCPurgeBeforeStarting bool, callbackExchangeName string, callbackExchangeType string, callbackQueueName string, callbackAccessKey string, RPCQueueConsumeChannel chan<- interface{}) {
-// 	if r.RemoteProcedureCallData == nil {
-// 		r.RemoteProcedureCallData = newRMQRemoteProcedureCall()
-// 	}
-
-// 	r.RemoteProcedureCallData.RPCServer = newRPCServer()
-
-// 	r.RemoteProcedureCallData.RPCServer.populate(RPCExchangeName, RPCExchangeType, RPCQueueName, RPCAccessKey, RPCQos, RPCPurgeBeforeStarting, callbackExchangeName, callbackExchangeType, callbackQueueName, callbackAccessKey, RPCQueueConsumeChannel)
-// }
 
 /*
 Delete a queue and a exchange, thinked to use at tests.

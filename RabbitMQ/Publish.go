@@ -19,13 +19,8 @@ newQueue is optional for a publishing in a diferent queue in the same exchange. 
 func (r *RabbitMQ) Publish(body string, newQueue string) (err error) {
 	errorFileIdentification := "RabbitMQ.go at Publish()"
 
-	var publisher *RabbitMQ
-
-	if newQueue == "" {
-		publisher = r
-
-	} else {
-		publisher = NewRabbitMQ().SharesChannelWith(r).GetPopulatedDataFrom(r)
+	publisher := NewRabbitMQ().SharesChannelWith(r).GetPopulatedDataFrom(r)
+	if newQueue != "" {
 		publisher.PublishData.QueueName = newQueue
 		publisher.PublishData.AccessKey = newQueue
 	}
@@ -34,7 +29,8 @@ func (r *RabbitMQ) Publish(body string, newQueue string) (err error) {
 
 	for {
 		publisher.Connection.semaphore.Lock()
-		notifyFlowChannel := r.preparePublisher()
+
+		notifyFlowChannel := publisher.preparePublisher()
 		if err != nil {
 			compelteError := "***ERROR*** Publishing stopped on queue '" + r.PublishData.QueueName + "' due to error preparing publisher in " + errorFileIdentification + ": " + err.Error()
 			log.Println(compelteError)
@@ -42,20 +38,21 @@ func (r *RabbitMQ) Publish(body string, newQueue string) (err error) {
 			time.Sleep(time.Second)
 			continue
 		}
-		publisher.Connection.semaphore.Unlock()
 
 		select {
 		case <-notifyFlowChannel:
 			waitingTimeForFlow := 10 * time.Second
 			log.Println("Queue '" + publisher.PublishData.QueueName + "' flow is closed, waiting " + waitingTimeForFlow.String() + " seconds to try publish again.")
+			publisher.Connection.semaphore.Unlock()
 			time.Sleep(waitingTimeForFlow)
 			continue
 
 		default:
-			confirmation, err := publisher.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), r.PublishData.ExchangeName, publisher.PublishData.AccessKey, true, false, message)
+			confirmation, err := publisher.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), publisher.PublishData.ExchangeName, publisher.PublishData.AccessKey, true, false, message)
 			if err != nil {
 				compelteError := "***ERROR*** error publishing message in " + errorFileIdentification + ": " + err.Error()
 				log.Println(compelteError)
+				publisher.Connection.semaphore.Unlock()
 				time.Sleep(time.Second)
 				continue
 			}
@@ -63,7 +60,14 @@ func (r *RabbitMQ) Publish(body string, newQueue string) (err error) {
 			success := confirmation.Wait()
 			if success {
 				log.Println("Publishing success on queue '" + publisher.PublishData.QueueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
+				publisher.Connection.semaphore.Unlock()
 				return nil
+
+			} else {
+				log.Println("Publishing confirmation failed on queue '" + publisher.PublishData.QueueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
+				publisher.Connection.semaphore.Unlock()
+				time.Sleep(time.Second)
+				continue
 			}
 		}
 	}

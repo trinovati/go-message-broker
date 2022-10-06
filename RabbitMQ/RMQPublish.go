@@ -7,7 +7,7 @@ import (
 )
 
 /*
-Object that holds information needed for publishing into RabbitMQ.
+Object that holds all information needed for publishing into a RabbitMQ queue.
 */
 type RMQPublish struct {
 	notifyFlowChannel *chan bool
@@ -18,7 +18,7 @@ type RMQPublish struct {
 }
 
 /*
-Create a new object that can hold all information needed to consume from a RabbitMQ queue.
+Builds a new object that holds all information needed for publishing into a RabbitMQ queue.
 */
 func newRMQPublish() *RMQPublish {
 	return &RMQPublish{
@@ -36,13 +36,20 @@ func (p *RMQPublish) populate(exchangeName string, exchangeType string, QueueNam
 	p.AccessKey = AccessKey
 }
 
+/*
+Will create a connection, prepare channels, declare queue and exchange case needed.
+
+If an error occurs, it will restart and retry all the process until the publisher is fully prepared.
+
+Return a channel of flow notifications.
+*/
 func (r *RabbitMQ) preparePublisher() (notifyFlowChannel chan bool) {
 	errorFileIdentification := "RMQPublish.go at preparePublisher()"
 
 	for {
 		UpdatedConnectionId := r.Connection.UpdatedConnectionId
 
-		err := r.PublishData.prepareChannel(r)
+		err := r.prepareChannel()
 		if err != nil {
 			log.Println("***ERROR*** error preparing channel in " + errorFileIdentification + ": " + err.Error())
 			time.Sleep(time.Second)
@@ -71,41 +78,9 @@ func (r *RabbitMQ) preparePublisher() (notifyFlowChannel chan bool) {
 }
 
 /*
-Prepare a channel linked to RabbitMQ connection for publishing.
+Prepare a queue linked to RabbitMQ channel for publishing.
 
 In case of unexistent exchange, it will create the exchange.
-*/
-func (p *RMQPublish) prepareChannel(rabbitmq *RabbitMQ) (err error) {
-	errorFileIdentification := "RMQPublish.go at prepareChannel()"
-
-	if rabbitmq.Channel == nil || rabbitmq.Channel.Channel == nil || rabbitmq.Channel.Channel.IsClosed() {
-
-		if rabbitmq.isConnectionDown() {
-			completeError := "in " + errorFileIdentification + ": connection dropped before creating channel, trying again soon"
-			return errors.New(completeError)
-		}
-
-		channel, err := rabbitmq.Connection.Connection.Channel()
-		if err != nil {
-			return errors.New("error creating a channel linked to RabbitMQ in " + errorFileIdentification + ": " + err.Error())
-		}
-		rabbitmq.Channel.Channel = channel
-
-		if rabbitmq.isConnectionDown() {
-			return errors.New("in " + errorFileIdentification + ": connection dropped before configuring channel, trying again soon")
-		}
-
-		err = rabbitmq.Channel.Channel.Confirm(false)
-		if err != nil {
-			return errors.New("error configuring channel with Confirm() protocol in " + errorFileIdentification + ": " + err.Error())
-		}
-	}
-
-	return nil
-}
-
-/*
-Prepare a queue linked to RabbitMQ channel for publishing.
 
 In case of unexistent queue, it will create the queue.
 
@@ -130,7 +105,7 @@ func (p *RMQPublish) prepareQueue(rabbitmq *RabbitMQ) (err error) {
 	}
 
 	if queue.Name != p.QueueName {
-		return errors.New("created queue name and expected queue name are diferent in " + errorFileIdentification + "")
+		return errors.New("in " + errorFileIdentification + ": created queue name '" + queue.Name + "' and expected queue name '" + p.QueueName + "' are diferent")
 	}
 
 	err = rabbitmq.Channel.Channel.QueueBind(p.QueueName, p.AccessKey, p.ExchangeName, false, nil)

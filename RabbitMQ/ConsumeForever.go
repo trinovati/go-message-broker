@@ -11,7 +11,11 @@ import (
 /*
 Infinite loop consuming the queue linked to the RabbitMQ.ConsumeData object, preparing the data and sending it towards a channel into the system.
 
-Use only in go routines, otherwise the system will be forever blocked in the infinite loop trying to push into the channel.
+Use only in goroutines, otherwise the system will be forever blocked in the infinite loop trying to push into the channel.
+
+Safe to share amqp.Connection and amqp.Channel for assincronus concurent access.
+
+Case the connection goes down, the service locks and only one instance is permitted to remake amqp.Channel.
 */
 func (r *RabbitMQ) ConsumeForever() {
 	r.Connection.semaphore.Lock()
@@ -53,6 +57,11 @@ func (r *RabbitMQ) ConsumeForever() {
 	}
 }
 
+/*
+Uses the semaphore at Connection object to check status in a assincronus access shared connection.
+
+If any problem at connection is found, it locks the semaphore and sends a signal to remake the amqp.Channel when connection is up again.
+*/
 func (r *RabbitMQ) connectionMonitor(connectionCheckChannel chan<- bool, unlockChannel <-chan bool) {
 	for {
 		connectionId := r.ConnectionId

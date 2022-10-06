@@ -59,7 +59,7 @@ func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, o
 			// 	}
 			// }
 
-			rabbitmq := NewRabbitMQ().SharesConnectionWith(r).PopulatePublish(r.ConsumeData.ExchangeName, r.ConsumeData.ExchangeType, r.ConsumeData.ErrorNotificationQueueName, r.ConsumeData.ErrorNotificationQueueName)
+			rabbitmq := NewRabbitMQ().SharesChannelWith(r).PopulatePublish(r.ConsumeData.ExchangeName, r.ConsumeData.ExchangeType, r.ConsumeData.ErrorNotificationQueueName, r.ConsumeData.ErrorNotificationQueueName)
 			rabbitmq.Publish(notifyMessage, "")
 
 			if err != nil {
