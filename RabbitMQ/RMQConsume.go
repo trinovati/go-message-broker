@@ -59,8 +59,6 @@ func (r *RabbitMQ) prepareConsumer() (incomingDeliveryChannel <-chan amqp.Delive
 	errorFileIdentification := "RMQConsume.go at prepareChannel()"
 
 	for {
-		UpdatedConnectionId := r.Connection.UpdatedConnectionId
-
 		err := r.prepareChannel()
 		if err != nil {
 			log.Println("***ERROR*** preparing channel in " + errorFileIdentification + ": " + err.Error())
@@ -87,8 +85,6 @@ func (r *RabbitMQ) prepareConsumer() (incomingDeliveryChannel <-chan amqp.Delive
 			time.Sleep(time.Second)
 			continue
 		}
-
-		r.ConnectionId = UpdatedConnectionId
 
 		return incomingDeliveryChannel
 	}

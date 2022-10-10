@@ -16,7 +16,6 @@ Object used to reference a amqp.Connection and store all the data needed to keep
 It has a semaphore to controll assincronus access to server, and suports shared access by multiple objects.
 */
 type ConnectionData struct {
-	UpdatedConnectionId        uint64
 	serverAddress              string
 	terminateOnConnectionError bool
 	isOpen                     bool
@@ -34,7 +33,6 @@ It has a semaphore to controll assincronus access to server, and suports shared 
 func newConnectionData() *ConnectionData {
 	return &ConnectionData{
 		serverAddress:              RABBITMQ_SERVER,
-		UpdatedConnectionId:        0,
 		Connection:                 &amqp.Connection{},
 		semaphore:                  &sync.Mutex{},
 		isOpen:                     false,
@@ -95,8 +93,6 @@ func (r *RabbitMQ) updateConnection(connection *amqp.Connection) {
 
 	r.Connection.Connection = connection
 
-	r.Connection.UpdatedConnectionId++
-
 	r.Connection.isOpen = true
 }
 
@@ -127,7 +123,6 @@ func (r *RabbitMQ) keepConnection() {
 
 		*r.Connection = ConnectionData{
 			serverAddress:              r.Connection.serverAddress,
-			UpdatedConnectionId:        r.Connection.UpdatedConnectionId,
 			Connection:                 new(amqp.Connection),
 			semaphore:                  r.Connection.semaphore,
 			isOpen:                     false,

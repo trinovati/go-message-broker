@@ -47,8 +47,6 @@ func (r *RabbitMQ) preparePublisher() (notifyFlowChannel chan bool) {
 	errorFileIdentification := "RMQPublish.go at preparePublisher()"
 
 	for {
-		UpdatedConnectionId := r.Connection.UpdatedConnectionId
-
 		err := r.prepareChannel()
 		if err != nil {
 			log.Println("***ERROR*** error preparing channel in " + errorFileIdentification + ": " + err.Error())
@@ -70,8 +68,6 @@ func (r *RabbitMQ) preparePublisher() (notifyFlowChannel chan bool) {
 			time.Sleep(time.Second)
 			continue
 		}
-
-		r.ConnectionId = UpdatedConnectionId
 
 		return notifyFlowChannel
 	}

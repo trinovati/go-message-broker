@@ -28,13 +28,17 @@ func (r *RabbitMQ) Publish(body string, newQueue string) (err error) {
 	message := amqp.Publishing{ContentType: "application/json", Body: []byte(body), DeliveryMode: amqp.Persistent}
 
 	for {
-		publisher.Connection.semaphore.Lock()
+		publisher.Channel.semaphore.Lock()
+		isConnectionDown := r.isConnectionDown()
+		if isConnectionDown {
+			publisher.Connection.semaphore.Lock()
+		}
 
 		notifyFlowChannel := publisher.preparePublisher()
 		if err != nil {
 			compelteError := "***ERROR*** Publishing stopped on queue '" + r.PublishData.QueueName + "' due to error preparing publisher in " + errorFileIdentification + ": " + err.Error()
 			log.Println(compelteError)
-			publisher.Connection.semaphore.Unlock()
+			r.amqpChannelUnlock(isConnectionDown)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -43,7 +47,7 @@ func (r *RabbitMQ) Publish(body string, newQueue string) (err error) {
 		case <-notifyFlowChannel:
 			waitingTimeForFlow := 10 * time.Second
 			log.Println("Queue '" + publisher.PublishData.QueueName + "' flow is closed, waiting " + waitingTimeForFlow.String() + " seconds to try publish again.")
-			publisher.Connection.semaphore.Unlock()
+			r.amqpChannelUnlock(isConnectionDown)
 			time.Sleep(waitingTimeForFlow)
 			continue
 
@@ -52,7 +56,7 @@ func (r *RabbitMQ) Publish(body string, newQueue string) (err error) {
 			if err != nil {
 				compelteError := "***ERROR*** error publishing message in " + errorFileIdentification + ": " + err.Error()
 				log.Println(compelteError)
-				publisher.Connection.semaphore.Unlock()
+				r.amqpChannelUnlock(isConnectionDown)
 				time.Sleep(time.Second)
 				continue
 			}
@@ -60,12 +64,12 @@ func (r *RabbitMQ) Publish(body string, newQueue string) (err error) {
 			success := confirmation.Wait()
 			if success {
 				log.Println("Publishing success on queue '" + publisher.PublishData.QueueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
-				publisher.Connection.semaphore.Unlock()
+				r.amqpChannelUnlock(isConnectionDown)
 				return nil
 
 			} else {
 				log.Println("Publishing confirmation failed on queue '" + publisher.PublishData.QueueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
-				publisher.Connection.semaphore.Unlock()
+				r.amqpChannelUnlock(isConnectionDown)
 				time.Sleep(time.Second)
 				continue
 			}

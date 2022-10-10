@@ -52,13 +52,6 @@ func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, o
 			notifyTime := time.Now().Format("2006-01-02 15:04:05Z07:00")
 			notifyMessage := `{"error_time":"` + notifyTime + `","error":"` + comment + `","message":"` + string(message.Body) + `"}`
 
-			// if RABBITMQ_SERVICE == RABBITMQ_RPC_SERVER || RABBITMQ_SERVICE == RABBITMQ_RPC_CLIENT {
-			// 	err = r.RPCServerCallbackPublish(acknowledger.Comment, message.CorrelationId, message.ReplyTo)
-			// 	if err != nil {
-			// 		return errors.New("error publishing failed callback in " + errorFileIdentification + ": " + err.Error())
-			// 	}
-			// }
-
 			rabbitmq := NewRabbitMQ().SharesChannelWith(r).PopulatePublish(r.ConsumeData.ExchangeName, r.ConsumeData.ExchangeType, r.ConsumeData.ErrorNotificationQueueName, r.ConsumeData.ErrorNotificationQueueName)
 			rabbitmq.Publish(notifyMessage, "")
 

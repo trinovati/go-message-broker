@@ -3,6 +3,7 @@ package rabbitmq
 import (
 	"errors"
 	"log"
+	"sync"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -11,12 +12,11 @@ import (
 Object containing methods to prepare a consumer or publisher to RabbitMQ service, operating as client, RPC client or RPC server.
 */
 type RabbitMQ struct {
-	ConnectionId uint64
-	Connection   *ConnectionData
-	Channel      *Channel
-	service      string
-	ConsumeData  *RMQConsume
-	PublishData  *RMQPublish
+	Connection  *ConnectionData
+	Channel     *Channel
+	service     string
+	ConsumeData *RMQConsume
+	PublishData *RMQPublish
 }
 
 /*
@@ -26,11 +26,12 @@ Since the connection have a intimate relation with the address of amqp.Channel, 
 shared channel purposes, so all shared channels points toward this object, and in case of channel remake, this object will point towards it.
 */
 type Channel struct {
-	Channel *amqp.Channel
+	Channel   *amqp.Channel
+	semaphore *sync.Mutex
 }
 
 /*
-Build a object containing methods to prepare a consumer or publisher to RabbitMQ service.
+Build an object containing methods to prepare a consumer or publisher to RabbitMQ service.
 
 terminateOnConnectionError defines if, at any moment, the connections fail or comes down, the service will panic or retry connection.
 
@@ -40,12 +41,13 @@ By default, the object will try to access the environmental variable RABBITMQ_SE
 */
 func NewRabbitMQ() *RabbitMQ {
 	return &RabbitMQ{
-		ConnectionId: 0,
-		Connection:   newConnectionData(),
-		Channel:      &Channel{Channel: nil},
-		service:      RABBITMQ_CLIENT,
-		ConsumeData:  nil,
-		PublishData:  nil,
+		Connection: newConnectionData(),
+		Channel: &Channel{
+			Channel:   nil,
+			semaphore: &sync.Mutex{}},
+		service:     RABBITMQ_CLIENT,
+		ConsumeData: nil,
+		PublishData: nil,
 	}
 }
 
@@ -77,7 +79,6 @@ func (r *RabbitMQ) SharesConnectionWith(rabbitmq *RabbitMQ) *RabbitMQ {
 
 	if connectionExists {
 		r.Connection = rabbitmq.Connection
-		r.ConnectionId = rabbitmq.ConnectionId
 
 	} else {
 		log.Println("in " + errorFileIdentification + ": WARNING!!! shared connection is nil pointer")
@@ -149,6 +150,19 @@ func (r *RabbitMQ) GetPopulatedDataFrom(rabbitmq *RabbitMQ) *RabbitMQ {
 }
 
 /*
+Used to release the semphores used to controll assincronus concurrent access to a amqp.Channel and amqp.Connection.
+
+unlockConnectionSemaphore marks if the Connection semaphore was locked and will be unlocked.
+*/
+func (r *RabbitMQ) amqpChannelUnlock(unlockConnectionSemaphore bool) {
+	r.Channel.semaphore.Unlock()
+
+	if unlockConnectionSemaphore {
+		r.Connection.semaphore.Unlock()
+	}
+}
+
+/*
 Populate the object for a consume behaviour.
 
 The messages will be sended at the channel passed to queueConsumeChannel.
@@ -185,7 +199,6 @@ func (r *RabbitMQ) prepareChannel() (err error) {
 	errorFileIdentification := "RabbitMQ.go at prepareChannel()"
 
 	if r.Channel == nil || r.Channel.Channel == nil || r.Channel.Channel.IsClosed() {
-
 		if r.isConnectionDown() {
 			completeError := "in " + errorFileIdentification + ": connection dropped before creating channel, trying again soon"
 			return errors.New(completeError)

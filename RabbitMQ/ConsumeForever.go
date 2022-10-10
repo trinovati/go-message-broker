@@ -19,12 +19,14 @@ Case the connection goes down, the service locks and only one instance is permit
 */
 func (r *RabbitMQ) ConsumeForever() {
 	r.Connection.semaphore.Lock()
+	r.Channel.semaphore.Lock()
 	incomingDeliveryChannel := r.prepareConsumer()
+	r.Channel.semaphore.Unlock()
 	r.Connection.semaphore.Unlock()
 
-	connectionCheckChannel := make(chan bool)
+	updateAmqpChannel := make(chan bool)
 	unlockChannel := make(chan bool)
-	go r.connectionMonitor(connectionCheckChannel, unlockChannel)
+	go r.amqpChannelMonitor(updateAmqpChannel, unlockChannel)
 
 	for {
 		select {
@@ -42,8 +44,7 @@ func (r *RabbitMQ) ConsumeForever() {
 
 			r.ConsumeData.OutgoingDeliveryChannel <- consumedMessage
 
-		case <-connectionCheckChannel:
-			time.Sleep(time.Second)
+		case <-updateAmqpChannel:
 			completeError := "***ERROR*** Consume stopped on queue '" + r.ConsumeData.QueueName + "', channel have closed with reason: '"
 			if r.Connection.lastConnectionError != nil {
 				completeError += r.Connection.lastConnectionError.Reason
@@ -52,33 +53,33 @@ func (r *RabbitMQ) ConsumeForever() {
 			log.Println(completeError)
 
 			incomingDeliveryChannel = r.prepareConsumer()
+
 			unlockChannel <- true
 		}
 	}
 }
 
 /*
-Uses the semaphore at Connection object to check status in a assincronus access shared connection.
+Uses the semaphore at Channel and Connection object to check status of a shared channel with assincronus concurent access.
 
-If any problem at connection is found, it locks the semaphore and sends a signal to remake the amqp.Channel when connection is up again.
+If any problem at channel is found, it locks both the semaphores and sends a signal to remake the amqp.Channel when connection is up.
 */
-func (r *RabbitMQ) connectionMonitor(connectionCheckChannel chan<- bool, unlockChannel <-chan bool) {
+func (r *RabbitMQ) amqpChannelMonitor(updateAmqpChannel chan<- bool, unlockChannel <-chan bool) {
 	for {
-		connectionId := r.ConnectionId
+		if r.Channel.Channel.IsClosed() {
+			r.Channel.semaphore.Lock()
+			r.Connection.semaphore.Lock()
 
-		r.Connection.semaphore.Lock()
+			updateAmqpChannel <- true
 
-		isConnectionIdOutdated := connectionId != r.Connection.UpdatedConnectionId
-
-		if r.isConnectionDown() || isConnectionIdOutdated {
-			connectionCheckChannel <- false
 			<-unlockChannel
+
+			r.Channel.semaphore.Unlock()
 			r.Connection.semaphore.Unlock()
-			continue
 
 		} else {
-			r.Connection.semaphore.Unlock()
 			time.Sleep(500 * time.Millisecond)
+			continue
 		}
 	}
 }
