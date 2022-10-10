@@ -6,111 +6,94 @@ import (
 	"sync"
 	"time"
 
-	"github.com/streadway/amqp"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 /*
-Object that holds information needed for consuming from RabbitMQ.
+Object that holds all information needed for consuming from RabbitMQ queue.
 */
 type RMQConsume struct {
-	Channel             *amqp.Channel
-	ExchangeName        string
-	ExchangeType        string
-	QueueName           string
-	AccessKey           string
-	NotifyQueueName     string
-	Qos                 int
-	PurgeBeforeStarting bool
-	QueueConsumeChannel chan<- interface{}
-	MessagesMap         *sync.Map
+	OutgoingDeliveryChannel    chan<- interface{}
+	UnacknowledgedDeliveryMap  *sync.Map
+	ExchangeName               string
+	ExchangeType               string
+	QueueName                  string
+	AccessKey                  string
+	ErrorNotificationQueueName string
+	Qos                        int
+	PurgeBeforeStarting        bool
 }
 
 /*
-Create a new object that can hold all information needed to consume from a RabbitMQ queue.
+Builds a new object that holds all information needed for consuming from RabbitMQ queue.
 */
-func newRMQConsume(queueConsumeChannel chan<- interface{}) *RMQConsume {
+func newRMQConsume() *RMQConsume {
 	return &RMQConsume{
-		QueueConsumeChannel: queueConsumeChannel,
+		OutgoingDeliveryChannel:   nil,
+		UnacknowledgedDeliveryMap: &sync.Map{},
 	}
 }
 
 /*
 Insert data into the object used for RabbitMQ queue consume.
 */
-func (c *RMQConsume) populate(exchangeName string, exchangeType string, QueueName string, AccessKey string, qos int, purgeBeforeStarting bool) {
+func (c *RMQConsume) populate(exchangeName string, exchangeType string, QueueName string, AccessKey string, qos int, purgeBeforeStarting bool, outgoingDeliveryChannel chan<- interface{}) {
 	c.ExchangeName = exchangeName
 	c.ExchangeType = exchangeType
 	c.QueueName = QueueName
 	c.AccessKey = AccessKey
-	c.NotifyQueueName = "_" + exchangeName + "__failed_messages"
+	c.ErrorNotificationQueueName = "_" + exchangeName + "__failed_messages"
 	c.Qos = qos
 	c.PurgeBeforeStarting = purgeBeforeStarting
-
-	c.MessagesMap = &sync.Map{}
+	c.OutgoingDeliveryChannel = outgoingDeliveryChannel
 }
 
 /*
 Will create a connection, prepare channels, declare queue and exchange case needed.
 
-Return channels for consuming messages and for checking the connection.
+If an error occurs, it will restart and retry all the process until the consumer is fully prepared.
+
+Return a channel of incoming deliveries.
 */
-func (c *RMQConsume) connectConsumer(rabbitmq *RabbitMQ) (queueMessages <-chan amqp.Delivery, closeNotifyChannel chan *amqp.Error) {
+func (r *RabbitMQ) prepareConsumer() (incomingDeliveryChannel <-chan amqp.Delivery) {
 	errorFileIdentification := "RMQConsume.go at prepareChannel()"
 
 	for {
-		rabbitmq.Connect()
-
-		err := c.prepareChannel(rabbitmq)
+		err := r.prepareChannel()
 		if err != nil {
 			log.Println("***ERROR*** preparing channel in " + errorFileIdentification + ": " + err.Error())
 			time.Sleep(time.Second)
 			continue
 		}
 
-		err = c.prepareQueue(rabbitmq)
+		err = r.ConsumeData.prepareQueue(r)
 		if err != nil {
 			log.Println("***ERROR*** preparing queue in " + errorFileIdentification + ": " + err.Error())
 			time.Sleep(time.Second)
 			continue
 		}
 
-		messageChannel, err := c.Channel.Consume(c.QueueName, "", false, false, false, false, nil)
+		if r.isConnectionDown() {
+			log.Println("***ERROR*** in " + errorFileIdentification + ": connection dropped before preparing consume, trying again soon")
+			time.Sleep(time.Second)
+			continue
+		}
+
+		incomingDeliveryChannel, err := r.Channel.Channel.Consume(r.ConsumeData.QueueName, "", false, false, false, false, nil)
 		if err != nil {
 			log.Println("***ERROR*** producing consume channel in " + errorFileIdentification + ": " + err.Error())
 			time.Sleep(time.Second)
 			continue
 		}
 
-		closeNotifyChannel = make(chan *amqp.Error)
-		rabbitmq.Connection.NotifyClose(closeNotifyChannel)
-
-		return messageChannel, closeNotifyChannel
+		return incomingDeliveryChannel
 	}
-}
-
-/*
-Prepare a channel linked to RabbitMQ connection for publishing.
-
-In case of unexistent exchange, it will create the exchange.
-*/
-func (c *RMQConsume) prepareChannel(rabbitMQ *RabbitMQ) (err error) {
-	errorFileIdentification := "RMQConsume.go at prepareChannel()"
-
-	c.Channel, err = rabbitMQ.Connection.Channel()
-	if err != nil {
-		return errors.New("error creating a channel linked to RabbitMQ in " + errorFileIdentification + ": " + err.Error())
-	}
-
-	err = c.Channel.ExchangeDeclare(c.ExchangeName, c.ExchangeType, true, false, false, false, nil)
-	if err != nil {
-		return errors.New("error creating RabbitMQ exchange in " + errorFileIdentification + ": " + err.Error())
-	}
-
-	return nil
 }
 
 /*
 Prepare a queue linked to RabbitMQ channel for consuming.
+
+In case of unexistent exchange, it will create the exchange.
 
 In case of unexistent queue, it will create the queue.
 
@@ -120,30 +103,55 @@ It will set Qos to the channel.
 
 It will purge the queue before consuming case ordered to.
 */
-func (c *RMQConsume) prepareQueue(rabbitMQ *RabbitMQ) (err error) {
+func (c *RMQConsume) prepareQueue(rabbitmq *RabbitMQ) (err error) {
 	errorFileIdentification := "RMQConsume.go at prepareQueue()"
 
-	queue, err := c.Channel.QueueDeclare(c.QueueName, true, false, false, false, nil)
+	if rabbitmq.isConnectionDown() {
+		completeError := "in " + errorFileIdentification + ": connection dropped before declaring exchange, trying again soon"
+		return errors.New(completeError)
+	}
+
+	err = rabbitmq.Channel.Channel.ExchangeDeclare(c.ExchangeName, c.ExchangeType, true, false, false, false, nil)
+	if err != nil {
+		return errors.New("error creating RabbitMQ exchange in " + errorFileIdentification + ": " + err.Error())
+	}
+
+	if rabbitmq.isConnectionDown() {
+		completeError := "in " + errorFileIdentification + ": connection dropped before declaring queue, trying again soon"
+		return errors.New(completeError)
+	}
+
+	queue, err := rabbitmq.Channel.Channel.QueueDeclare(c.QueueName, true, false, false, false, nil)
 	if err != nil {
 		return errors.New("error creating queue in " + errorFileIdentification + ": " + err.Error())
 	}
 
 	if queue.Name != c.QueueName {
-		return errors.New("created queue name and expected queue name are diferent in " + errorFileIdentification + "")
+		return errors.New("in " + errorFileIdentification + ": created queue name '" + queue.Name + "' and expected queue name '" + c.QueueName + "' are diferent")
 	}
 
-	err = c.Channel.QueueBind(c.QueueName, c.AccessKey, c.ExchangeName, false, nil)
+	if rabbitmq.isConnectionDown() {
+		completeError := "in " + errorFileIdentification + ": connection dropped before queue binding, trying again soon"
+		return errors.New(completeError)
+	}
+
+	err = rabbitmq.Channel.Channel.QueueBind(c.QueueName, c.AccessKey, c.ExchangeName, false, nil)
 	if err != nil {
 		return errors.New("error binding queue in " + errorFileIdentification + ": " + err.Error())
 	}
 
-	err = c.Channel.Qos(c.Qos, 0, false)
+	err = rabbitmq.Channel.Channel.Qos(c.Qos, 0, false)
 	if err != nil {
 		return errors.New("error qos a channel, limiting the maximum message queue can hold, in " + errorFileIdentification + ": " + err.Error())
 	}
 
 	if c.PurgeBeforeStarting {
-		_, err = c.Channel.QueuePurge(c.QueueName, true)
+		if rabbitmq.isConnectionDown() {
+			completeError := "in " + errorFileIdentification + ": connection dropped purging queue, trying again soon"
+			return errors.New(completeError)
+		}
+
+		_, err = rabbitmq.Channel.Channel.QueuePurge(c.QueueName, true)
 		if err != nil {
 			return errors.New("error purging a channel queue in " + errorFileIdentification + ": " + err.Error())
 		}

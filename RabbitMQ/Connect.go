@@ -2,26 +2,144 @@ package rabbitmq
 
 import (
 	"log"
+	"runtime"
+	"strings"
+	"sync"
 	"time"
 
-	"github.com/streadway/amqp"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 /*
-Connect to the RabbitMQ server.
+Object used to reference a amqp.Connection and store all the data needed to keep track of its health.
+
+It has a semaphore to controll assincronus access to server, and suports shared access by multiple objects.
 */
-func (r *RabbitMQ) Connect() {
+type ConnectionData struct {
+	serverAddress              string
+	terminateOnConnectionError bool
+	isOpen                     bool
+	Connection                 *amqp.Connection
+	semaphore                  *sync.Mutex
+	lastConnectionError        *amqp.Error
+	closureNotificationChannel chan *amqp.Error
+}
+
+/*
+Build an object used to reference a amqp.Connection and store all the data needed to keep track of its health.
+
+It has a semaphore to controll assincronus access to server, and suports shared access by multiple objects.
+*/
+func newConnectionData() *ConnectionData {
+	return &ConnectionData{
+		serverAddress:              RABBITMQ_SERVER,
+		Connection:                 &amqp.Connection{},
+		semaphore:                  &sync.Mutex{},
+		isOpen:                     false,
+		terminateOnConnectionError: false,
+		lastConnectionError:        nil,
+		closureNotificationChannel: nil,
+	}
+}
+
+/*
+Connect to the RabbitMQ server and open a goroutine for the connection maintance.
+
+If terminanteOnConnectionError is true at RabbitMQ object, any problem with connection will cause a panic.
+If false, it will retry connection on the same server every time it is lost.
+
+It is safe to share connection by multiple objects.
+*/
+func (r *RabbitMQ) Connect() *RabbitMQ {
 	errorFileIdentification := "RabbitMQ.go at Connect()"
-	var err error
+
+	serverAddress := strings.Split(strings.Split(r.Connection.serverAddress, "@")[1], ":")[0]
 
 	for {
-		r.Connection, err = amqp.Dial(r.serverAddress)
+		connection, err := amqp.Dial(r.Connection.serverAddress)
 		if err != nil {
-			log.Println("error creating a connection linked to RabbitMQ in " + errorFileIdentification + ": " + err.Error())
-			time.Sleep(time.Second)
-			continue
+
+			if r.Connection.terminateOnConnectionError {
+				completeMessage := "error creating a connection linked to RabbitMQ server '" + serverAddress + "' in " + errorFileIdentification + ": " + err.Error() + "\nStopping service as requested!"
+				log.Panic(completeMessage)
+
+			} else {
+				completeError := "***ERROR*** error creating a connection linked to RabbitMQ server '" + serverAddress + "' in " + errorFileIdentification + ": " + err.Error()
+				log.Println(completeError)
+				time.Sleep(time.Second)
+				continue
+			}
 		}
 
-		break
+		log.Println("Successful connection with RabbitMQ server '" + serverAddress + "'")
+
+		r.updateConnection(connection)
+
+		go r.keepConnection()
+
+		return r
 	}
+}
+
+/*
+Refresh the closureNotificationChannel for helthyness.
+
+Reference the newly created amqp.Connection, assuring assincronus concurrent access to multiple objects.
+
+Refresh the connection id for controll of references.
+*/
+func (r *RabbitMQ) updateConnection(connection *amqp.Connection) {
+	r.Connection.closureNotificationChannel = connection.NotifyClose(make(chan *amqp.Error))
+
+	r.Connection.Connection = connection
+
+	r.Connection.isOpen = true
+}
+
+/*
+Method for reconnection in case of RabbitMQ server drops.
+*/
+func (r *RabbitMQ) keepConnection() {
+	errorFileIdentification := "RabbitMQ.go at keepConnection()"
+
+	serverAddress := strings.Split(strings.Split(r.Connection.serverAddress, "@")[1], ":")[0]
+
+	closeNotification := <-r.Connection.closureNotificationChannel
+
+	if r.Connection.terminateOnConnectionError {
+		completeMessage := "in " + errorFileIdentification + ": connection with RabbitMQ server '" + serverAddress + "' have closed with reason: '" + closeNotification.Reason + "'\nStopping service as requested!"
+		log.Panic(completeMessage)
+
+	} else {
+		r.Connection.isOpen = false
+		r.Connection.lastConnectionError = closeNotification
+		log.Println("***ERROR*** in " + errorFileIdentification + ": connection with RabbitMQ server '" + serverAddress + "' have closed with reason: '" + closeNotification.Reason + "'")
+
+		err := r.Connection.Connection.Close()
+		if err != nil {
+			completeError := "***ERROR*** error closing a connection linked to RabbitMQ in " + errorFileIdentification + ": " + err.Error()
+			log.Println(completeError)
+		}
+
+		*r.Connection = ConnectionData{
+			serverAddress:              r.Connection.serverAddress,
+			Connection:                 new(amqp.Connection),
+			semaphore:                  r.Connection.semaphore,
+			isOpen:                     false,
+			terminateOnConnectionError: r.Connection.terminateOnConnectionError,
+			lastConnectionError:        r.Connection.lastConnectionError,
+			closureNotificationChannel: nil,
+		}
+
+		r.Connect()
+
+		runtime.Goexit()
+	}
+}
+
+/*
+Check the connection, returning true if its down and unavailble.
+*/
+func (r *RabbitMQ) isConnectionDown() bool {
+	return !r.Connection.isOpen
 }
