@@ -2,7 +2,6 @@ package testing
 
 import (
 	"context"
-	"log"
 	"strconv"
 	"testing"
 	"time"
@@ -191,10 +190,6 @@ func TestSharesConnectionWith(t *testing.T) {
 	if messageBroker.Connection != baseMessageBroker.Connection {
 		t.Error("error at Connection, both pointers should be the same")
 	}
-
-	if messageBroker.ConnectionId != baseMessageBroker.ConnectionId {
-		t.Error("error at ConnectionId, both ids should be equal\nexpected: " + strconv.FormatUint(baseMessageBroker.ConnectionId, 10) + "\ngot:      " + strconv.FormatUint(messageBroker.ConnectionId, 10))
-	}
 }
 
 func TestSharesChannelWith(t *testing.T) {
@@ -212,10 +207,6 @@ func TestSharesChannelWith(t *testing.T) {
 		t.Error("error at Connection, both pointers should be the same")
 	}
 
-	if messageBroker.ConnectionId != baseMessageBroker.ConnectionId {
-		t.Error("error at ConnectionId, both ids should be equal\nexpected: " + strconv.FormatUint(baseMessageBroker.ConnectionId, 10) + "\ngot:      " + strconv.FormatUint(messageBroker.ConnectionId, 10))
-	}
-
 	if messageBroker.Channel != baseMessageBroker.Channel {
 		t.Error("error at Channel, both pointers should be the same")
 	}
@@ -224,68 +215,45 @@ func TestSharesChannelWith(t *testing.T) {
 func TestPublishRabbitMQ(t *testing.T) {
 	var err error
 
-	message := "teste001"
+	expectedMessage := "teste001"
 
 	exchangeName := "tests"
 	exchangeType := "direct"
-	queueName := "test__messagehandler_Publish()"
+	queueName := exchangeName + "__Publish()"
 	accessKey := queueName
-	qos := 0
 
 	messageBrokerPublisher := rabbitmq.NewRabbitMQ().Connect().PopulatePublish(exchangeName, exchangeType, queueName, accessKey)
 
-	messageBrokerConsumer := rabbitmq.NewRabbitMQ().SharesChannelWith(messageBrokerPublisher)
-
 	err = messageBrokerPublisher.Publish("creting queue", "")
 	if err != nil {
-		t.Error("error publishing to queue. " + err.Error())
+		t.Error("error publishing to queue: " + err.Error())
 	}
 
-	_, err = messageBrokerConsumer.Channel.Channel.QueuePurge(queueName, true)
+	_, err = messageBrokerPublisher.Channel.Channel.QueuePurge(queueName, true)
 	if err != nil {
-		t.Error("error purging the queue. " + err.Error())
+		t.Error("error purging the queue: " + err.Error())
 	}
 
-	err = messageBrokerConsumer.Channel.Channel.Qos(qos, 0, false)
+	err = messageBrokerPublisher.Publish(expectedMessage, "")
 	if err != nil {
-		t.Error("error Qos() a channel, limiting the maximum message ConsumeRMQ queue can hold: " + err.Error())
+		t.Error("error publishing to queue: " + err.Error())
 	}
 
-	err = messageBrokerPublisher.Publish(message, "")
+	recievedMessage, _, err := messageBrokerPublisher.Channel.Channel.Get(queueName, true)
 	if err != nil {
-		t.Error("error publishing to queue. " + err.Error())
+		t.Error("error consuming message: " + err.Error())
 	}
 
-	deliveryChannel, err := messageBrokerConsumer.Channel.Channel.Consume(queueName, "", true, false, false, false, nil)
+	if string(recievedMessage.Body) != expectedMessage {
+		t.Error("error at with message body.\nexpected: " + expectedMessage + "\ngot:      " + string(recievedMessage.Body))
+	}
+
+	err = rabbitmq.DeleteQueueAndExchange(messageBrokerPublisher.Channel.Channel, queueName, exchangeName, "doit")
 	if err != nil {
-		t.Error("error consuming the queue. " + err.Error())
+		t.Error("error deleting queue: " + err.Error())
 	}
 
-	recievedMessage := <-deliveryChannel
-
-	if string(recievedMessage.Body) != message {
-		t.Error("error at with message body.\nexpected: " + message + "\ngot:      " + string(recievedMessage.Body))
-	}
-
-	err = messageBrokerConsumer.Channel.Channel.Ack(recievedMessage.DeliveryTag, false)
-	if err != nil {
-		t.Error("error acknowledging: " + err.Error())
-	}
-
-	log.Println(string(recievedMessage.Body))
-
-	time.Sleep(time.Second)
-
-	channel, err := messageBrokerPublisher.Connection.Connection.Channel()
-	if err != nil {
-		t.Error("error producing channel " + err.Error())
-	}
-
-	err = rabbitmq.DeleteQueueAndExchange(channel, messageBrokerPublisher.PublishData.QueueName, messageBrokerPublisher.PublishData.ExchangeName, "doit")
-	if err != nil {
-		t.Error("error deleting queue " + messageBrokerPublisher.PublishData.QueueName + ": " + err.Error())
-	}
-	channel.Close()
+	messageBrokerPublisher.Channel.Channel.Close()
 }
 
 func TestConsumeForeverRabbitMQ(t *testing.T) {
@@ -294,7 +262,7 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 
 	exchangeName := "tests"
 	exchangeType := "direct"
-	queueName := "test__messagehandler_ConsumeForever()"
+	queueName := exchangeName + "__ConsumeForever()"
 	accessKey := queueName
 	qos := 0
 	purgeBeforeStarting := true
@@ -306,45 +274,69 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	messageBrokerPublisher := rabbitmq.NewRabbitMQ().SharesChannelWith(messageBrokerConsumer).PopulatePublish(exchangeName, exchangeType, queueName, accessKey)
-
-	for i, message := range messages {
-		confirmation, err := messageBrokerPublisher.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), messageBrokerPublisher.PublishData.ExchangeName, messageBrokerPublisher.PublishData.AccessKey, true, false, amqp.Publishing{Body: []byte(message)})
+	for _, expectedMessage := range messages {
+		confirmation, err := messageBrokerConsumer.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, accessKey, true, false, amqp.Publishing{Body: []byte(expectedMessage)})
 		if err != nil {
-			t.Error("error publishing message to RabbitMQ " + err.Error())
+			t.Error("error publishing message to RabbitMQ: " + err.Error())
 		}
 
 		success := confirmation.Wait()
 		if !success {
-			t.Error("Publishing confirmation failed on queue '" + messageBrokerPublisher.PublishData.QueueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
+			t.Error("Publishing confirmation failed on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
 		}
 
 		recievedMessage := <-queueConsumeChannel
 
 		transmissionData := string(recievedMessage.(*messagebroker.MessageBrokerConsumedMessage).TransmissionData.([]byte))
 
-		if transmissionData != messages[i] {
-			t.Error("error at consume.\nexpected: " + messages[i] + "\ngot:      " + transmissionData)
+		if transmissionData != expectedMessage {
+			t.Error("error at consume.\nexpected: " + expectedMessage + "\ngot:      " + transmissionData)
 		}
 
 		err = messageBrokerConsumer.Acknowledge(true, "success", recievedMessage.(*messagebroker.MessageBrokerConsumedMessage).MessageId, "")
 		if err != nil {
 			t.Error("error with acknowlege: " + err.Error())
 		}
-
-		log.Println(transmissionData)
 	}
 
-	time.Sleep(time.Second)
-
-	channel, err := messageBrokerPublisher.Connection.Connection.Channel()
+	err := rabbitmq.DeleteQueueAndExchange(messageBrokerConsumer.Channel.Channel, queueName, exchangeName, "doit")
 	if err != nil {
-		t.Error("error producing channel " + err.Error())
+		t.Error("error deleting queue " + queueName + ": " + err.Error())
 	}
 
-	err = rabbitmq.DeleteQueueAndExchange(channel, messageBrokerPublisher.PublishData.QueueName, messageBrokerPublisher.PublishData.ExchangeName, "doit")
+	messageBrokerConsumer.Channel.Channel.Close()
+}
+
+func TestPersistDataRabbitMQ(t *testing.T) {
+	expectedMessage := "teste"
+
+	exchangeName := "tests"
+	exchangeType := "direct"
+	queueName := "tests"
+	accessKey := queueName
+
+	expectedQueueName := exchangeName + "__PersistData()"
+
+	messageBrokerPublisher := rabbitmq.NewRabbitMQ().Connect().PopulatePublish(exchangeName, exchangeType, queueName, accessKey)
+
+	err := messageBrokerPublisher.PersistData(expectedMessage, expectedQueueName, "")
 	if err != nil {
-		t.Error("error deleting queue " + messageBrokerPublisher.PublishData.QueueName + ": " + err.Error())
+		t.Error("error persisting data: " + err.Error())
 	}
-	channel.Close()
+
+	delivery, _, err := messageBrokerPublisher.Channel.Channel.Get(expectedQueueName, true)
+	if err != nil {
+		t.Error("error consuming message: " + err.Error())
+	}
+
+	if string(delivery.Body) != expectedMessage {
+		t.Error("error persisting data.\nexpected: " + expectedMessage + "\ngot:      " + string(delivery.Body))
+	}
+
+	err = rabbitmq.DeleteQueueAndExchange(messageBrokerPublisher.Channel.Channel, expectedQueueName, exchangeName, "doit")
+	if err != nil {
+		t.Error("error deleting queue and exchange: " + err.Error())
+	}
+
+	messageBrokerPublisher.Channel.Channel.Close()
 }
