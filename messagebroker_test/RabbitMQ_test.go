@@ -224,7 +224,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 
 	messageBrokerPublisher := rabbitmq.NewRabbitMQ().Connect().PopulatePublish(exchangeName, exchangeType, queueName, accessKey)
 
-	err = messageBrokerPublisher.Publish("creting queue", "")
+	err = messageBrokerPublisher.Publish("creting queue", "", "")
 	if err != nil {
 		t.Error("error publishing to queue: " + err.Error())
 	}
@@ -234,7 +234,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 		t.Error("error purging the queue: " + err.Error())
 	}
 
-	err = messageBrokerPublisher.Publish(expectedMessage, "")
+	err = messageBrokerPublisher.Publish(expectedMessage, "", "")
 	if err != nil {
 		t.Error("error publishing to queue: " + err.Error())
 	}
@@ -319,7 +319,7 @@ func TestPersistDataRabbitMQ(t *testing.T) {
 
 	messageBrokerPublisher := rabbitmq.NewRabbitMQ().Connect().PopulatePublish(exchangeName, exchangeType, queueName, accessKey)
 
-	err := messageBrokerPublisher.PersistData(expectedMessage, expectedQueueName, "")
+	err := messageBrokerPublisher.PersistData(expectedMessage, "@"+expectedQueueName, "")
 	if err != nil {
 		t.Error("error persisting data: " + err.Error())
 	}

@@ -53,7 +53,7 @@ func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, o
 			notifyMessage := `{"error_time":"` + notifyTime + `","error":"` + comment + `","message":"` + string(message.Body) + `"}`
 
 			rabbitmq := NewRabbitMQ().SharesChannelWith(r).PopulatePublish(r.ConsumeData.ExchangeName, r.ConsumeData.ExchangeType, r.ConsumeData.ErrorNotificationQueueName, r.ConsumeData.ErrorNotificationQueueName)
-			err := rabbitmq.Publish(notifyMessage, "")
+			err := rabbitmq.Publish(notifyMessage, "", "")
 			if err != nil {
 				log.Println("error publishing to notify queue in " + errorFileIdentification + ": " + err.Error())
 			}
