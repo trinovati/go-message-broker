@@ -2,9 +2,9 @@ package rabbitmq
 
 import (
 	"context"
+	"errors"
 	"log"
 	"strconv"
-	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -32,48 +32,49 @@ func (r *RabbitMQ) Publish(body string, exchange string, queue string) (err erro
 
 	message := amqp.Publishing{ContentType: "application/json", Body: []byte(body), DeliveryMode: amqp.Persistent}
 
-	for {
-		r.Channel.semaphore.Lock()
-		isConnectionDown := r.isConnectionDown()
-		if isConnectionDown {
-			compelteError := "***ERROR*** in " + errorFileIdentification + ": connection is down"
-			log.Println(compelteError)
-			r.Connection.semaphore.Lock()
+	log.Println("1  ** LOCKING CHANNEL")
+	r.Channel.semaphore.Lock()
+	isConnectionDown := r.isConnectionDown()
+	if isConnectionDown {
+		compelteError := "***ERROR*** in " + errorFileIdentification + ": connection is down"
+		log.Println(compelteError)
+		log.Println("1,5  ** LOCKING CHANNEL")
+		r.Connection.semaphore.Lock()
+	}
+
+	log.Println("2  ** PREPARING PUBLISHER")
+	notifyFlowChannel := NewRabbitMQ().SharesChannelWith(r).PopulatePublish(exchangeName, r.PublishData.ExchangeType, queueName, queueName).preparePublisher()
+
+	select {
+	case <-notifyFlowChannel:
+		log.Println("3  ** UNLOCKING AT FLOW")
+		r.amqpChannelUnlock(isConnectionDown)
+		compelteError := "in " + errorFileIdentification + ": queue '" + queueName + "' flow is closed"
+		return errors.New(compelteError)
+
+	default:
+		confirmation, err := r.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, queueAccessKey, true, false, message)
+		if err != nil {
+			log.Println("3  ** UNLOCKING AT PUBLISH ERROR")
+			r.amqpChannelUnlock(isConnectionDown)
+			compelteError := "error publishing message in " + errorFileIdentification + ": " + err.Error()
+			return errors.New(compelteError)
 		}
 
-		notifyFlowChannel := NewRabbitMQ().SharesChannelWith(r).PopulatePublish(exchangeName, r.PublishData.ExchangeType, queueName, queueName).preparePublisher()
-
-		select {
-		case <-notifyFlowChannel:
-			waitingTimeForFlow := 10 * time.Second
-			log.Println("Queue '" + queueName + "' flow is closed, waiting " + waitingTimeForFlow.String() + " seconds to try publish again.")
+		success := confirmation.Wait()
+		if success {
+			confirmation.Confirm(true)
+			log.Println("3  ** UNLOCKING AT SUCESS")
 			r.amqpChannelUnlock(isConnectionDown)
-			time.Sleep(waitingTimeForFlow)
-			continue
+			log.Println("SUCCESS publishing  on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
+			return nil
 
-		default:
-			confirmation, err := r.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, queueAccessKey, true, false, message)
-			if err != nil {
-				compelteError := "***ERROR*** error publishing message in " + errorFileIdentification + ": " + err.Error()
-				log.Println(compelteError)
-				r.amqpChannelUnlock(isConnectionDown)
-				time.Sleep(time.Second)
-				continue
-			}
-
-			success := confirmation.Wait()
-			if success {
-				log.Println("SUCCESS publishing  on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
-				confirmation.Confirm(true)
-				r.amqpChannelUnlock(isConnectionDown)
-				return nil
-
-			} else {
-				log.Println("FAILED publishing on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
-				r.amqpChannelUnlock(isConnectionDown)
-				time.Sleep(time.Second)
-				continue
-			}
+		} else {
+			confirmation.Confirm(false)
+			log.Println("3  ** UNLOCKING AT FAILURE")
+			r.amqpChannelUnlock(isConnectionDown)
+			log.Println("FAILED publishing on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
+			return nil
 		}
 	}
 }
