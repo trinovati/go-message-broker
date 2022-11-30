@@ -2,9 +2,9 @@ package rabbitmq
 
 import (
 	"context"
-	"errors"
 	"log"
 	"strconv"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -35,28 +35,34 @@ func (r *RabbitMQ) Publish(body string, exchange string, queue string) (err erro
 	r.PublishData.Channel.WaitForChannel()
 	notifyFlowChannel := r.PublishData.Channel.Channel.NotifyFlow(make(chan bool))
 
-	select {
-	case <-notifyFlowChannel:
-		compelteError := "in " + errorFileIdentification + ": queue '" + queueName + "' flow is closed"
-		return errors.New(compelteError)
+	for {
+		select {
+		case <-notifyFlowChannel:
+			log.Println("***ERROR*** in " + errorFileIdentification + ": queue '" + queueName + "' flow is closed")
+			time.Sleep(time.Second)
+			continue
 
-	default:
-		confirmation, err := r.PublishData.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, queueAccessKey, true, false, message)
-		if err != nil {
-			compelteError := "error publishing message in " + errorFileIdentification + ": " + err.Error()
-			return errors.New(compelteError)
-		}
+		default:
+			r.PublishData.Channel.WaitForChannel()
+			confirmation, err := r.PublishData.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, queueAccessKey, true, false, message)
+			if err != nil {
+				log.Println("error publishing message in " + errorFileIdentification + ": " + err.Error())
+				time.Sleep(time.Second)
+				continue
+			}
 
-		success := confirmation.Wait()
-		if success {
-			confirmation.Confirm(true)
-			log.Println("SUCCESS publishing  on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
-			return nil
+			success := confirmation.Wait()
+			if success {
+				confirmation.Confirm(true)
+				log.Println("SUCCESS publishing on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
+				return nil
 
-		} else {
-			confirmation.Confirm(false)
-			log.Println("FAILED publishing on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
-			return nil
+			} else {
+				confirmation.Confirm(false)
+				log.Println("FAILED publishing on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
+				time.Sleep(time.Second)
+				continue
+			}
 		}
 	}
 }

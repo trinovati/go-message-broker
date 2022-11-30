@@ -30,7 +30,7 @@ func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, o
 	r.ConsumeData.UnacknowledgedDeliveryMap.Delete(messageId)
 
 	switch message := mapObject.(type) {
-	case (amqp.Delivery):
+	case amqp.Delivery:
 		isMessageNotFound := message.Body == nil
 		if isMessageNotFound {
 			return errors.New("in " + errorFileIdentification + ": message id '" + messageId + "' not found")

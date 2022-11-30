@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ type ConnectionData struct {
 	closureNotificationChannel chan *amqp.Error
 	Context                    context.Context
 	CancelContext              context.CancelFunc
+	ConnectionId               uint64
 }
 
 /*
@@ -41,6 +43,7 @@ func newConnectionData() *ConnectionData {
 		closureNotificationChannel: nil,
 		Context:                    connectionContext,
 		CancelContext:              cancelContext,
+		ConnectionId:               0,
 	}
 }
 
@@ -73,7 +76,8 @@ func (r *RabbitMQ) Connect() *RabbitMQ {
 			}
 		}
 
-		log.Println("Successful connection with RabbitMQ server '" + serverAddress + "'")
+		time.Sleep(2 * time.Second)
+		log.Println("Successful RabbitMQ connection with id " + strconv.FormatUint(r.Connection.ConnectionId, 10) + " at server '" + serverAddress + "'")
 
 		r.Connection.updateConnection(connection)
 
@@ -94,6 +98,7 @@ func (c *ConnectionData) updateConnection(connection *amqp.Connection) {
 	c.closureNotificationChannel = connection.NotifyClose(make(chan *amqp.Error))
 
 	c.Connection = connection
+	c.ConnectionId++
 
 	c.isOpen = true
 }
@@ -134,6 +139,7 @@ func (r *RabbitMQ) keepConnection() {
 				lastConnectionError:        r.Connection.lastConnectionError,
 				closureNotificationChannel: nil,
 				Context:                    r.Connection.Context,
+				ConnectionId:               r.Connection.ConnectionId,
 			}
 
 			r.Connect()

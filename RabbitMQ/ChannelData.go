@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ type ChannelData struct {
 	lastChannelError           *amqp.Error
 	Context                    context.Context
 	CancelContext              context.CancelFunc
+	ChannelId                  uint64
 }
 
 /*
@@ -40,6 +42,7 @@ func newChannelData() *ChannelData {
 		lastChannelError:           nil,
 		Context:                    channelContext,
 		CancelContext:              cancelContext,
+		ChannelId:                  0,
 	}
 }
 
@@ -68,7 +71,8 @@ func (c *ChannelData) CreateChannel(connection *ConnectionData) {
 			continue
 		}
 
-		log.Println("Successful produced a channel with RabbitMQ server '" + serverAddress + "'")
+		time.Sleep(2 * time.Second)
+		log.Println("Successful produced a RabbitMQ channel with id " + strconv.FormatUint(c.ChannelId, 10) + " at server '" + serverAddress + "'")
 
 		c.updateChannel(channel, connection)
 
@@ -91,6 +95,7 @@ func (c *ChannelData) updateChannel(channel *amqp.Channel, connection *Connectio
 	c.Connection = connection
 
 	c.Channel = channel
+	c.ChannelId++
 
 	c.isOpen = true
 }
@@ -129,6 +134,7 @@ func (c *ChannelData) keepChannel() {
 			closureNotificationChannel: nil,
 			lastChannelError:           c.lastChannelError,
 			Context:                    c.Context,
+			ChannelId:                  c.ChannelId,
 		}
 
 		c.CreateChannel(c.Connection)

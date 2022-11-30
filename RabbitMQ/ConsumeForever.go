@@ -55,12 +55,12 @@ Prepare the consumer in case of the channel comming down.
 */
 func (c *RMQConsume) amqpChannelMonitor(consumeChannelSinalizer chan bool) {
 	for {
-		if c.Channel.isChannelDown() {
+		if !c.Channel.isOpen || c.Channel.isChannelDown() {
 			consumeChannelSinalizer <- false
 			<-consumeChannelSinalizer
 
 		} else {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(250 * time.Millisecond)
 			continue
 		}
 	}
