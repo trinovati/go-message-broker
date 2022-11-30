@@ -34,7 +34,8 @@ func (r *RabbitMQ) Publish(body string, exchange string, queue string) (err erro
 
 	r.PublishData.Channel.WaitForChannel()
 
-	notifyFlowChannel := NewRabbitMQ().PopulatePublish(exchangeName, r.PublishData.ExchangeType, queueName, queueName).SharesPublishChannelWith(r).PublishData.preparePublisher()
+	publisher := NewRabbitMQ().PopulatePublish(exchangeName, r.PublishData.ExchangeType, queueName, queueName).SetPublishChannel(r.PublishData.Channel)
+	notifyFlowChannel := publisher.PublishData.preparePublisher()
 
 	select {
 	case <-notifyFlowChannel:
@@ -42,7 +43,7 @@ func (r *RabbitMQ) Publish(body string, exchange string, queue string) (err erro
 		return errors.New(compelteError)
 
 	default:
-		confirmation, err := r.PublishData.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, queueAccessKey, true, false, message)
+		confirmation, err := publisher.PublishData.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, queueAccessKey, true, false, message)
 		if err != nil {
 			compelteError := "error publishing message in " + errorFileIdentification + ": " + err.Error()
 			return errors.New(compelteError)

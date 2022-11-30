@@ -257,12 +257,12 @@ func TestSharesConnectionWith(t *testing.T) {
 	log.Printf("finished TestSharesConnectionWith\n\n")
 }
 
-func TestSharesPublishChannelWith(t *testing.T) {
-	log.Println("starting TestSharesPublishChannelWith")
+func TestSetPublishChannel(t *testing.T) {
+	log.Println("starting TestSetPublishChannel")
 
 	baseMessageBroker := rabbitmq.NewRabbitMQ().PopulatePublish("", "", "", "")
 
-	messageBroker := rabbitmq.NewRabbitMQ().PopulatePublish("", "", "", "").SharesPublishChannelWith(baseMessageBroker)
+	messageBroker := rabbitmq.NewRabbitMQ().PopulatePublish("", "", "", "").SetPublishChannel(baseMessageBroker.PublishData.Channel)
 
 	{
 		if messageBroker.Connection != baseMessageBroker.Connection {
@@ -274,15 +274,15 @@ func TestSharesPublishChannelWith(t *testing.T) {
 		}
 	}
 
-	log.Printf("finishing TestSharesPublishChannelWith\n\n")
+	log.Printf("finishing TestSetPublishChannel\n\n")
 }
 
-func TestSharesConsumeChannelWith(t *testing.T) {
-	log.Println("starting TestSharesConsumeChannelWith")
+func TestSetConsumeChannel(t *testing.T) {
+	log.Println("starting TestSetConsumeChannel")
 
 	baseMessageBroker := rabbitmq.NewRabbitMQ().PopulateConsume("", "", "", "", 0, false, nil)
 
-	messageBroker := rabbitmq.NewRabbitMQ().PopulateConsume("", "", "", "", 0, false, nil).SharesConsumeChannelWith(baseMessageBroker)
+	messageBroker := rabbitmq.NewRabbitMQ().PopulateConsume("", "", "", "", 0, false, nil).SetConsumeChannel(baseMessageBroker.ConsumeData.Channel)
 
 	{
 		if messageBroker.Connection != baseMessageBroker.Connection {
@@ -294,7 +294,7 @@ func TestSharesConsumeChannelWith(t *testing.T) {
 		}
 	}
 
-	log.Printf("finishing TestSharesConsumeChannelWith\n\n")
+	log.Printf("finishing TestSetConsumeChannel\n\n")
 }
 
 func TestPublishRabbitMQ(t *testing.T) {

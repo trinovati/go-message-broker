@@ -74,24 +74,10 @@ func (r *RabbitMQ) SharesConnectionWith(rabbitmq *RabbitMQ) *RabbitMQ {
 /*
 Will make both objects share the same channel, connection information and server interaction.
 */
-func (r *RabbitMQ) SharesConsumeChannelWith(rabbitmq *RabbitMQ) *RabbitMQ {
-	errorFileIdentification := "RabbitMQ.go at SharesConsumeChannelWith()"
+func (r *RabbitMQ) SetConsumeChannel(channel *ChannelData) *RabbitMQ {
+	r.Connection = channel.Connection
 
-	consumerExists := rabbitmq.ConsumeData != nil
-	if consumerExists {
-		channelExists := rabbitmq.ConsumeData.Channel != nil
-
-		if channelExists {
-			r.SharesConnectionWith(rabbitmq)
-
-			r.ConsumeData.Channel = rabbitmq.ConsumeData.Channel
-
-		} else {
-			log.Println("in " + errorFileIdentification + ": WARNING!!! shared channel is nil pointer")
-		}
-	} else {
-		log.Println("in " + errorFileIdentification + ": WARNING!!! rabbitmq object has no consumer")
-	}
+	r.ConsumeData.Channel = channel
 
 	return r
 }
@@ -99,24 +85,10 @@ func (r *RabbitMQ) SharesConsumeChannelWith(rabbitmq *RabbitMQ) *RabbitMQ {
 /*
 Will make both objects share the same channel, connection information and server interaction.
 */
-func (r *RabbitMQ) SharesPublishChannelWith(rabbitmq *RabbitMQ) *RabbitMQ {
-	errorFileIdentification := "RabbitMQ.go at SharesPublishChannelWith()"
+func (r *RabbitMQ) SetPublishChannel(channel *ChannelData) *RabbitMQ {
+	r.Connection = channel.Connection
 
-	consumerExists := rabbitmq.PublishData != nil
-	if consumerExists {
-		channelExists := rabbitmq.PublishData.Channel != nil
-
-		if channelExists {
-			r.SharesConnectionWith(rabbitmq)
-
-			r.PublishData.Channel = rabbitmq.PublishData.Channel
-
-		} else {
-			log.Println("in " + errorFileIdentification + ": WARNING!!! shared channel is nil pointer")
-		}
-	} else {
-		log.Println("in " + errorFileIdentification + ": WARNING!!! rabbitmq object has no publisher")
-	}
+	r.PublishData.Channel = channel
 
 	return r
 }
@@ -143,6 +115,8 @@ func (r *RabbitMQ) GetPopulatedDataFrom(rabbitmq *RabbitMQ) *RabbitMQ {
 			PurgeBeforeStarting:       rabbitmq.ConsumeData.PurgeBeforeStarting,
 			Channel:                   newChannelData(),
 		}
+
+		r.ConsumeData.Channel.Connection = r.Connection
 	}
 
 	if rabbitmq.PublishData != nil {
@@ -153,6 +127,8 @@ func (r *RabbitMQ) GetPopulatedDataFrom(rabbitmq *RabbitMQ) *RabbitMQ {
 			AccessKey:    rabbitmq.PublishData.AccessKey,
 			Channel:      newChannelData(),
 		}
+
+		r.PublishData.Channel.Connection = r.Connection
 	}
 
 	return r
@@ -171,6 +147,7 @@ func (r *RabbitMQ) PopulateConsume(exchangeName string, exchangeType string, que
 	if r.ConsumeData == nil {
 		r.ConsumeData = newRMQConsume()
 		r.ConsumeData.Channel = newChannelData()
+		r.ConsumeData.Channel.Connection = r.Connection
 	}
 
 	r.ConsumeData.populate(exchangeName, exchangeType, queueName, accessKey, qos, purgeBeforeStarting, queueConsumeChannel)
@@ -191,6 +168,7 @@ func (r *RabbitMQ) PopulatePublish(exchangeName string, exchangeType string, que
 	if r.PublishData == nil {
 		r.PublishData = newRMQPublish()
 		r.PublishData.Channel = newChannelData()
+		r.PublishData.Channel.Connection = r.Connection
 	}
 
 	r.PublishData.populate(exchangeName, exchangeType, queueName, accessKey)
