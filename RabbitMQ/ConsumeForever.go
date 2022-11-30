@@ -4,7 +4,6 @@ import (
 	"strconv"
 	"time"
 
-	amqp "github.com/rabbitmq/amqp091-go"
 	messagebroker "gitlab.com/aplicacao/trinovati-connector-message-brokers"
 )
 
@@ -18,39 +17,47 @@ Safe to share amqp.Connection and amqp.Channel for assincronus concurent access.
 In case of the connections and/or channel comes down, it prepres for consuming as soon as the channel is up again.
 */
 func (r *RabbitMQ) ConsumeForever() {
-	incomingDeliveryChannel := new(<-chan amqp.Delivery)
-	*incomingDeliveryChannel = r.ConsumeData.prepareLoopingConsumer()
+	consumeChannelSinalizer := make(chan bool)
+	incomingDeliveryChannel := r.ConsumeData.prepareLoopingConsumer()
 
-	go r.ConsumeData.amqpChannelMonitor(incomingDeliveryChannel)
+	go r.ConsumeData.amqpChannelMonitor(consumeChannelSinalizer)
 
 	r.PublishData.Channel.CreateChannel(r.Connection)
 	r.PreparePublishQueue()
 
-	for delivery := range *incomingDeliveryChannel {
-		if delivery.Body == nil {
-			continue
+	for {
+		select {
+		case <-consumeChannelSinalizer:
+			r.ConsumeData.Channel.WaitForChannel()
+			incomingDeliveryChannel = r.ConsumeData.prepareLoopingConsumer()
+
+			consumeChannelSinalizer <- true
+
+		case delivery := <-incomingDeliveryChannel:
+			if delivery.Body == nil {
+				continue
+			}
+
+			messageId := strconv.FormatUint(delivery.DeliveryTag, 10)
+			r.ConsumeData.UnacknowledgedDeliveryMap.Store(messageId, delivery)
+
+			consumedMessage := messagebroker.NewMessageBrokerConsumedMessage()
+			consumedMessage.MessageId = messageId
+			consumedMessage.TransmissionData = delivery.Body
+
+			r.ConsumeData.OutgoingDeliveryChannel <- consumedMessage
 		}
-
-		messageId := strconv.FormatUint(delivery.DeliveryTag, 10)
-		r.ConsumeData.UnacknowledgedDeliveryMap.Store(messageId, delivery)
-
-		consumedMessage := messagebroker.NewMessageBrokerConsumedMessage()
-		consumedMessage.MessageId = messageId
-		consumedMessage.TransmissionData = delivery.Body
-
-		r.ConsumeData.OutgoingDeliveryChannel <- consumedMessage
 	}
 }
 
 /*
 Prepare the consumer in case of the channel comming down.
 */
-func (c *RMQConsume) amqpChannelMonitor(incomingDeliveryChannel *(<-chan amqp.Delivery)) {
+func (c *RMQConsume) amqpChannelMonitor(consumeChannelSinalizer chan bool) {
 	for {
 		if c.Channel.isChannelDown() {
-			c.Channel.WaitForChannel()
-
-			*incomingDeliveryChannel = c.prepareLoopingConsumer()
+			consumeChannelSinalizer <- false
+			<-consumeChannelSinalizer
 
 		} else {
 			time.Sleep(500 * time.Millisecond)
