@@ -3,7 +3,6 @@ package rabbitmq
 import (
 	"errors"
 	"log"
-	"sync"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -13,21 +12,9 @@ Object containing methods to prepare a consumer or publisher to RabbitMQ service
 */
 type RabbitMQ struct {
 	Connection  *ConnectionData
-	Channel     *Channel
 	service     string
 	ConsumeData *RMQConsume
 	PublishData *RMQPublish
-}
-
-/*
-Object used to reference a amqp.Channel address.
-
-Since the connection have a intimate relation with the address of amqp.Channel, it could not be moved to another memory position for
-shared channel purposes, so all shared channels points toward this object, and in case of channel remake, this object will point towards it.
-*/
-type Channel struct {
-	Channel   *amqp.Channel
-	semaphore *sync.Mutex
 }
 
 /*
@@ -41,10 +28,7 @@ By default, the object will try to access the environmental variable RABBITMQ_SE
 */
 func NewRabbitMQ() *RabbitMQ {
 	return &RabbitMQ{
-		Connection: newConnectionData(),
-		Channel: &Channel{
-			Channel:   nil,
-			semaphore: &sync.Mutex{}},
+		Connection:  newConnectionData(),
 		service:     RABBITMQ_CLIENT,
 		ConsumeData: nil,
 		PublishData: nil,
@@ -88,26 +72,50 @@ func (r *RabbitMQ) SharesConnectionWith(rabbitmq *RabbitMQ) *RabbitMQ {
 }
 
 /*
-Will make both objects share the same channel, connection information, and server interaction semaphore for assincronus access.
+Will make both objects share the same channel, connection information and server interaction.
 */
-func (r *RabbitMQ) SharesChannelWith(rabbitmq *RabbitMQ) *RabbitMQ {
-	errorFileIdentification := "RabbitMQ.go at SharesChannelWith()"
+func (r *RabbitMQ) SharesConsumeChannelWith(rabbitmq *RabbitMQ) *RabbitMQ {
+	errorFileIdentification := "RabbitMQ.go at SharesConsumeChannelWith()"
 
-	channelExists := rabbitmq.Channel != nil
-	connectionExists := rabbitmq.Connection != nil && rabbitmq.Connection.Connection != nil
+	consumerExists := rabbitmq.ConsumeData != nil
+	if consumerExists {
+		channelExists := rabbitmq.ConsumeData.Channel != nil
 
-	if channelExists {
-		if connectionExists {
+		if channelExists {
 			r.SharesConnectionWith(rabbitmq)
 
-			r.Channel = rabbitmq.Channel
+			r.ConsumeData.Channel = rabbitmq.ConsumeData.Channel
 
 		} else {
-			log.Println("in " + errorFileIdentification + ": WARNING!!! shared connection is nil pointer")
+			log.Println("in " + errorFileIdentification + ": WARNING!!! shared channel is nil pointer")
 		}
-
 	} else {
-		log.Println("in " + errorFileIdentification + ": WARNING!!! shared channel is nil pointer")
+		log.Println("in " + errorFileIdentification + ": WARNING!!! rabbitmq object has no consumer")
+	}
+
+	return r
+}
+
+/*
+Will make both objects share the same channel, connection information and server interaction.
+*/
+func (r *RabbitMQ) SharesPublishChannelWith(rabbitmq *RabbitMQ) *RabbitMQ {
+	errorFileIdentification := "RabbitMQ.go at SharesPublishChannelWith()"
+
+	consumerExists := rabbitmq.PublishData != nil
+	if consumerExists {
+		channelExists := rabbitmq.PublishData.Channel != nil
+
+		if channelExists {
+			r.SharesConnectionWith(rabbitmq)
+
+			r.PublishData.Channel = rabbitmq.PublishData.Channel
+
+		} else {
+			log.Println("in " + errorFileIdentification + ": WARNING!!! shared channel is nil pointer")
+		}
+	} else {
+		log.Println("in " + errorFileIdentification + ": WARNING!!! rabbitmq object has no publisher")
 	}
 
 	return r
@@ -125,15 +133,14 @@ func (r *RabbitMQ) GetPopulatedDataFrom(rabbitmq *RabbitMQ) *RabbitMQ {
 
 	if rabbitmq.ConsumeData != nil {
 		r.ConsumeData = &RMQConsume{
-			UnacknowledgedDeliveryMap:  rabbitmq.ConsumeData.UnacknowledgedDeliveryMap,
-			OutgoingDeliveryChannel:    rabbitmq.ConsumeData.OutgoingDeliveryChannel,
-			ExchangeName:               rabbitmq.ConsumeData.ExchangeName,
-			ExchangeType:               rabbitmq.ConsumeData.ExchangeType,
-			QueueName:                  rabbitmq.ConsumeData.QueueName,
-			AccessKey:                  rabbitmq.ConsumeData.AccessKey,
-			ErrorNotificationQueueName: rabbitmq.ConsumeData.ErrorNotificationQueueName,
-			Qos:                        rabbitmq.ConsumeData.Qos,
-			PurgeBeforeStarting:        rabbitmq.ConsumeData.PurgeBeforeStarting,
+			UnacknowledgedDeliveryMap: rabbitmq.ConsumeData.UnacknowledgedDeliveryMap,
+			OutgoingDeliveryChannel:   rabbitmq.ConsumeData.OutgoingDeliveryChannel,
+			ExchangeName:              rabbitmq.ConsumeData.ExchangeName,
+			ExchangeType:              rabbitmq.ConsumeData.ExchangeType,
+			QueueName:                 rabbitmq.ConsumeData.QueueName,
+			AccessKey:                 rabbitmq.ConsumeData.AccessKey,
+			Qos:                       rabbitmq.ConsumeData.Qos,
+			PurgeBeforeStarting:       rabbitmq.ConsumeData.PurgeBeforeStarting,
 		}
 	}
 
@@ -150,29 +157,27 @@ func (r *RabbitMQ) GetPopulatedDataFrom(rabbitmq *RabbitMQ) *RabbitMQ {
 }
 
 /*
-Used to release the semphores used to controll assincronus concurrent access to a amqp.Channel and amqp.Connection.
-
-unlockConnectionSemaphore marks if the Connection semaphore was locked and will be unlocked.
-*/
-func (r *RabbitMQ) amqpChannelUnlock(unlockConnectionSemaphore bool) {
-	r.Channel.semaphore.Unlock()
-
-	if unlockConnectionSemaphore {
-		r.Connection.semaphore.Unlock()
-	}
-}
-
-/*
 Populate the object for a consume behaviour.
 
-The messages will be sended at the channel passed to queueConsumeChannel.
+NEVER USE THE SAME OBJECT FOR CONSUME AND PUBLISHING.
+Keep in mind that PublishData object will be filled with standard failed messages queue data used by Acknowledge() to store failed messages.
+You can use PopulatePublish() afterwards for customization of failed messages destination queue.
+
+The consumed messages will be sended to the channel passed to queueConsumeChannel.
 */
 func (r *RabbitMQ) PopulateConsume(exchangeName string, exchangeType string, queueName string, accessKey string, qos int, purgeBeforeStarting bool, queueConsumeChannel chan<- interface{}) *RabbitMQ {
 	if r.ConsumeData == nil {
 		r.ConsumeData = newRMQConsume()
 	}
+	r.ConsumeData.Channel = newChannelData(r.Connection)
 
 	r.ConsumeData.populate(exchangeName, exchangeType, queueName, accessKey, qos, purgeBeforeStarting, queueConsumeChannel)
+
+	defaultFailedMessagesExchangeName := "failed"
+	defaultFailedMessagesExchangeType := "direct"
+	defaultFailedMessagesQueueName := "_" + exchangeName + "__failed_messages"
+	defaultFailedMessagesAccessKey := defaultFailedMessagesQueueName
+	r.PopulatePublish(defaultFailedMessagesExchangeName, defaultFailedMessagesExchangeType, defaultFailedMessagesQueueName, defaultFailedMessagesAccessKey)
 
 	return r
 }
@@ -184,44 +189,11 @@ func (r *RabbitMQ) PopulatePublish(exchangeName string, exchangeType string, que
 	if r.PublishData == nil {
 		r.PublishData = newRMQPublish()
 	}
+	r.PublishData.Channel = newChannelData(r.Connection)
 
 	r.PublishData.populate(exchangeName, exchangeType, queueName, accessKey)
 
 	return r
-}
-
-/*
-Prepare a channel linked to RabbitMQ connection for publishing.
-
-It puts the channel in confirm mode, so any publishing done will have a response from the server.
-*/
-func (r *RabbitMQ) prepareChannel() (err error) {
-	errorFileIdentification := "RabbitMQ.go at prepareChannel()"
-
-	if r.Channel == nil || r.Channel.Channel == nil || r.Channel.Channel.IsClosed() {
-		if r.isConnectionDown() {
-			completeError := "in " + errorFileIdentification + ": connection dropped before creating channel, trying again soon"
-			return errors.New(completeError)
-		}
-
-		channel, err := r.Connection.Connection.Channel()
-		if err != nil {
-			return errors.New("error creating a channel linked to RabbitMQ in " + errorFileIdentification + ": " + err.Error())
-		}
-		r.Channel.Channel = channel
-
-		if r.isConnectionDown() {
-			return errors.New("in " + errorFileIdentification + ": connection dropped before configuring publish channel, trying again soon")
-		}
-
-		err = r.Channel.Channel.Confirm(false)
-		if err != nil {
-			return errors.New("error configuring channel with Confirm() protocol in " + errorFileIdentification + ": " + err.Error())
-		}
-
-	}
-
-	return nil
 }
 
 /*

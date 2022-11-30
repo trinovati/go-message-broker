@@ -49,13 +49,12 @@ func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, o
 				return errors.New("error negative acknowlodging message in " + errorFileIdentification + ": " + err.Error())
 			}
 
-			notifyTime := time.Now().Format("2006-01-02 15:04:05Z07:00")
-			notifyMessage := `{"error_time":"` + notifyTime + `","error":"` + comment + `","message":"` + string(message.Body) + `"}`
+			failureTime := time.Now().Format("2006-01-02 15:04:05Z07:00")
+			failureMessage := `{"filure_time":"` + failureTime + `","error":"` + comment + `","message":"` + string(message.Body) + `"}`
 
-			rabbitmq := NewRabbitMQ().SharesChannelWith(r).PopulatePublish(r.ConsumeData.ExchangeName, r.ConsumeData.ExchangeType, r.ConsumeData.ErrorNotificationQueueName, r.ConsumeData.ErrorNotificationQueueName)
-			err := rabbitmq.Publish(notifyMessage, "", "")
+			err := r.Publish(failureMessage, "", "")
 			if err != nil {
-				log.Println("error publishing to notify queue in " + errorFileIdentification + ": " + err.Error())
+				log.Println("error publishing to failure queue in " + errorFileIdentification + ": " + err.Error())
 			}
 
 		}

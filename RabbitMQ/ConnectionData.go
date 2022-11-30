@@ -1,10 +1,10 @@
 package rabbitmq
 
 import (
+	"context"
 	"log"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -12,17 +12,16 @@ import (
 
 /*
 Object used to reference a amqp.Connection and store all the data needed to keep track of its health.
-
-It has a semaphore to controll assincronus access to server, and suports shared access by multiple objects.
 */
 type ConnectionData struct {
 	serverAddress              string
 	terminateOnConnectionError bool
 	isOpen                     bool
 	Connection                 *amqp.Connection
-	semaphore                  *sync.Mutex
 	lastConnectionError        *amqp.Error
 	closureNotificationChannel chan *amqp.Error
+	Context                    context.Context
+	CancelContext              context.CancelFunc
 }
 
 /*
@@ -31,14 +30,17 @@ Build an object used to reference a amqp.Connection and store all the data neede
 It has a semaphore to controll assincronus access to server, and suports shared access by multiple objects.
 */
 func newConnectionData() *ConnectionData {
+	connectionContext, cancelContext := context.WithCancel(context.Background())
+
 	return &ConnectionData{
 		serverAddress:              RABBITMQ_SERVER,
 		Connection:                 &amqp.Connection{},
-		semaphore:                  &sync.Mutex{},
 		isOpen:                     false,
 		terminateOnConnectionError: false,
 		lastConnectionError:        nil,
 		closureNotificationChannel: nil,
+		Context:                    connectionContext,
+		CancelContext:              cancelContext,
 	}
 }
 
@@ -73,7 +75,7 @@ func (r *RabbitMQ) Connect() *RabbitMQ {
 
 		log.Println("Successful connection with RabbitMQ server '" + serverAddress + "'")
 
-		r.updateConnection(connection)
+		r.Connection.updateConnection(connection)
 
 		go r.keepConnection()
 
@@ -88,12 +90,12 @@ Reference the newly created amqp.Connection, assuring assincronus concurrent acc
 
 Refresh the connection id for controll of references.
 */
-func (r *RabbitMQ) updateConnection(connection *amqp.Connection) {
-	r.Connection.closureNotificationChannel = connection.NotifyClose(make(chan *amqp.Error))
+func (c *ConnectionData) updateConnection(connection *amqp.Connection) {
+	c.closureNotificationChannel = connection.NotifyClose(make(chan *amqp.Error))
 
-	r.Connection.Connection = connection
+	c.Connection = connection
 
-	r.Connection.isOpen = true
+	c.isOpen = true
 }
 
 /*
@@ -104,42 +106,67 @@ func (r *RabbitMQ) keepConnection() {
 
 	serverAddress := strings.Split(strings.Split(r.Connection.serverAddress, "@")[1], ":")[0]
 
-	closeNotification := <-r.Connection.closureNotificationChannel
+	select {
+	case <-r.Connection.Context.Done():
+		break
 
-	if r.Connection.terminateOnConnectionError {
-		completeMessage := "in " + errorFileIdentification + ": connection with RabbitMQ server '" + serverAddress + "' have closed with reason: '" + closeNotification.Reason + "'\nStopping service as requested!"
-		log.Panic(completeMessage)
+	case closeNotification := <-r.Connection.closureNotificationChannel:
+		if r.Connection.terminateOnConnectionError {
+			completeMessage := "in " + errorFileIdentification + ": connection with RabbitMQ server '" + serverAddress + "' have closed with reason: '" + closeNotification.Reason + "'\nStopping service as requested!"
+			log.Panic(completeMessage)
 
-	} else {
-		r.Connection.isOpen = false
-		r.Connection.lastConnectionError = closeNotification
-		log.Println("***ERROR*** in " + errorFileIdentification + ": connection with RabbitMQ server '" + serverAddress + "' have closed with reason: '" + closeNotification.Reason + "'")
+		} else {
+			r.Connection.isOpen = false
+			r.Connection.lastConnectionError = closeNotification
+			log.Println("***ERROR*** in " + errorFileIdentification + ": connection with RabbitMQ server '" + serverAddress + "' have closed with reason: '" + closeNotification.Reason + "'")
 
-		err := r.Connection.Connection.Close()
-		if err != nil {
-			completeError := "***ERROR*** error closing a connection linked to RabbitMQ in " + errorFileIdentification + ": " + err.Error()
-			log.Println(completeError)
+			err := r.Connection.Connection.Close()
+			if err != nil {
+				completeError := "***ERROR*** error closing a connection linked to RabbitMQ in " + errorFileIdentification + ": " + err.Error()
+				log.Println(completeError)
+			}
+
+			*r.Connection = ConnectionData{
+				serverAddress:              r.Connection.serverAddress,
+				Connection:                 &amqp.Connection{},
+				isOpen:                     false,
+				terminateOnConnectionError: r.Connection.terminateOnConnectionError,
+				lastConnectionError:        r.Connection.lastConnectionError,
+				closureNotificationChannel: nil,
+				Context:                    r.Connection.Context,
+			}
+
+			r.Connect()
 		}
 
-		*r.Connection = ConnectionData{
-			serverAddress:              r.Connection.serverAddress,
-			Connection:                 new(amqp.Connection),
-			semaphore:                  r.Connection.semaphore,
-			isOpen:                     false,
-			terminateOnConnectionError: r.Connection.terminateOnConnectionError,
-			lastConnectionError:        r.Connection.lastConnectionError,
-			closureNotificationChannel: nil,
-		}
-
-		r.Connect()
-
-		runtime.Goexit()
 	}
+
+	runtime.Goexit()
+}
+
+func (r *RabbitMQ) CloseConnection() {
+	r.Connection.CancelContext()
+
+	r.Connection.Connection.Close()
 }
 
 /*
 Check the connection, returning true if its down and unavailble.
 */
-func (r *RabbitMQ) isConnectionDown() bool {
-	return !r.Connection.isOpen
+func (c *ConnectionData) IsConnectionDown() bool {
+	return !c.isOpen
+}
+
+/*
+Wait for the connection to be open.
+*/
+func (c *ConnectionData) WaitForConnection() {
+	for {
+		if c.isOpen {
+			return
+		}
+
+		log.Println("waiting for rabbitmq connection")
+		time.Sleep(500 * time.Millisecond)
+	}
 }

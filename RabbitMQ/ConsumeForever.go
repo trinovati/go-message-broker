@@ -1,10 +1,10 @@
 package rabbitmq
 
 import (
-	"log"
 	"strconv"
 	"time"
 
+	amqp "github.com/rabbitmq/amqp091-go"
 	messagebroker "gitlab.com/aplicacao/trinovati-connector-message-brokers"
 )
 
@@ -15,67 +15,41 @@ Use only in goroutines, otherwise the system will be forever blocked in the infi
 
 Safe to share amqp.Connection and amqp.Channel for assincronus concurent access.
 
-Case the connection goes down, the service locks and only one instance is permitted to remake amqp.Channel.
+In case of the connections and/or channel comes down, it prepres for consuming as soon as the channel is up again.
 */
 func (r *RabbitMQ) ConsumeForever() {
-	r.Connection.semaphore.Lock()
-	r.Channel.semaphore.Lock()
-	incomingDeliveryChannel := r.prepareConsumer()
-	r.Channel.semaphore.Unlock()
-	r.Connection.semaphore.Unlock()
+	incomingDeliveryChannel := new(<-chan amqp.Delivery)
+	*incomingDeliveryChannel = r.ConsumeData.prepareConsumer()
 
-	updateAmqpChannel := make(chan bool)
-	unlockChannel := make(chan bool)
-	go r.amqpChannelMonitor(updateAmqpChannel, unlockChannel)
+	go r.ConsumeData.amqpChannelMonitor(incomingDeliveryChannel)
 
-	for {
-		select {
-		case delivery := <-incomingDeliveryChannel:
-			if delivery.Body == nil {
-				continue
-			}
+	r.PublishData.Channel.CreateChannel()
 
-			messageId := strconv.FormatUint(delivery.DeliveryTag, 10)
-			r.ConsumeData.UnacknowledgedDeliveryMap.Store(messageId, delivery)
-
-			consumedMessage := messagebroker.NewMessageBrokerConsumedMessage()
-			consumedMessage.MessageId = messageId
-			consumedMessage.TransmissionData = delivery.Body
-
-			r.ConsumeData.OutgoingDeliveryChannel <- consumedMessage
-
-		case <-updateAmqpChannel:
-			completeError := "***ERROR*** Consume stopped on queue '" + r.ConsumeData.QueueName + "', channel have closed with reason: '"
-			if r.Connection.lastConnectionError != nil {
-				completeError += r.Connection.lastConnectionError.Reason
-			}
-			completeError += "'"
-			log.Println(completeError)
-
-			incomingDeliveryChannel = r.prepareConsumer()
-
-			unlockChannel <- true
+	for delivery := range *incomingDeliveryChannel {
+		if delivery.Body == nil {
+			continue
 		}
+
+		messageId := strconv.FormatUint(delivery.DeliveryTag, 10)
+		r.ConsumeData.UnacknowledgedDeliveryMap.Store(messageId, delivery)
+
+		consumedMessage := messagebroker.NewMessageBrokerConsumedMessage()
+		consumedMessage.MessageId = messageId
+		consumedMessage.TransmissionData = delivery.Body
+
+		r.ConsumeData.OutgoingDeliveryChannel <- consumedMessage
 	}
 }
 
 /*
-Uses the semaphore at Channel and Connection object to check status of a shared channel with assincronus concurent access.
-
-If any problem at channel is found, it locks both the semaphores and sends a signal to remake the amqp.Channel when connection is up.
+Prepare the consumer in case of the channel comming down.
 */
-func (r *RabbitMQ) amqpChannelMonitor(updateAmqpChannel chan<- bool, unlockChannel <-chan bool) {
+func (c *RMQConsume) amqpChannelMonitor(incomingDeliveryChannel *(<-chan amqp.Delivery)) {
 	for {
-		if r.Channel.Channel.IsClosed() {
-			r.Channel.semaphore.Lock()
-			r.Connection.semaphore.Lock()
+		if c.Channel.isChannelDown() {
+			c.Channel.WaitForChannel()
 
-			updateAmqpChannel <- true
-
-			<-unlockChannel
-
-			r.Channel.semaphore.Unlock()
-			r.Connection.semaphore.Unlock()
+			*incomingDeliveryChannel = c.prepareConsumer()
 
 		} else {
 			time.Sleep(500 * time.Millisecond)

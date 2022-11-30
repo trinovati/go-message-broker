@@ -10,6 +10,7 @@ import (
 Object that holds all information needed for publishing into a RabbitMQ queue.
 */
 type RMQPublish struct {
+	Channel           *ChannelData
 	notifyFlowChannel *chan bool
 	ExchangeName      string
 	ExchangeType      string
@@ -43,31 +44,26 @@ If an error occurs, it will restart and retry all the process until the publishe
 
 Return a channel of flow notifications.
 */
-func (r *RabbitMQ) preparePublisher() (notifyFlowChannel chan bool) {
+func (p *RMQPublish) preparePublisher() (notifyFlowChannel chan bool) {
 	errorFileIdentification := "RMQPublish.go at preparePublisher()"
 
 	for {
-		err := r.prepareChannel()
+		p.Channel.WaitForChannel()
+
+		err := p.preparePublishQueue()
 		if err != nil {
 			log.Println("***ERROR*** error preparing channel in " + errorFileIdentification + ": " + err.Error())
 			time.Sleep(time.Second)
 			continue
 		}
 
-		if r.isConnectionDown() {
+		if p.Channel.isChannelDown() {
 			log.Println("***ERROR*** in " + errorFileIdentification + ": connection dropped before preparing notify flow channel, trying again soon")
 			time.Sleep(time.Second)
 			continue
 		}
 
-		notifyFlowChannel := r.Channel.Channel.NotifyFlow(make(chan bool))
-
-		err = r.PublishData.prepareQueue(r)
-		if err != nil {
-			log.Println("***ERROR*** error preparing queue in " + errorFileIdentification + ": " + err.Error())
-			time.Sleep(time.Second)
-			continue
-		}
+		notifyFlowChannel := p.Channel.Channel.NotifyFlow(make(chan bool))
 
 		return notifyFlowChannel
 	}
@@ -82,20 +78,20 @@ In case of unexistent queue, it will create the queue.
 
 In case of queue not beeing binded to any exchange, it will bind it to a exchange.
 */
-func (p *RMQPublish) prepareQueue(rabbitmq *RabbitMQ) (err error) {
+func (p *RMQPublish) preparePublishQueue() (err error) {
 	errorFileIdentification := "RMQPublish.go at prepareQueue()"
 
-	if rabbitmq.isConnectionDown() {
+	if p.Channel.isChannelDown() {
 		completeError := "in " + errorFileIdentification + ": connection dropped before declaring exchange, trying again soon"
 		return errors.New(completeError)
 	}
 
-	err = rabbitmq.Channel.Channel.ExchangeDeclare(p.ExchangeName, p.ExchangeType, true, false, false, false, nil)
+	err = p.Channel.Channel.ExchangeDeclare(p.ExchangeName, p.ExchangeType, true, false, false, false, nil)
 	if err != nil {
 		return errors.New("error creating RabbitMQ exchange in " + errorFileIdentification + ": " + err.Error())
 	}
 
-	queue, err := rabbitmq.Channel.Channel.QueueDeclare(p.QueueName, true, false, false, false, nil)
+	queue, err := p.Channel.Channel.QueueDeclare(p.QueueName, true, false, false, false, nil)
 	if err != nil {
 		return errors.New("error creating queue in " + errorFileIdentification + ": " + err.Error())
 	}
@@ -104,7 +100,7 @@ func (p *RMQPublish) prepareQueue(rabbitmq *RabbitMQ) (err error) {
 		return errors.New("in " + errorFileIdentification + ": created queue name '" + queue.Name + "' and expected queue name '" + p.QueueName + "' are diferent")
 	}
 
-	err = rabbitmq.Channel.Channel.QueueBind(p.QueueName, p.AccessKey, p.ExchangeName, false, nil)
+	err = p.Channel.Channel.QueueBind(p.QueueName, p.AccessKey, p.ExchangeName, false, nil)
 	if err != nil {
 		return errors.New("error binding queue in " + errorFileIdentification + ": " + err.Error())
 	}

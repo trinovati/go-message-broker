@@ -32,31 +32,18 @@ func (r *RabbitMQ) Publish(body string, exchange string, queue string) (err erro
 
 	message := amqp.Publishing{ContentType: "application/json", Body: []byte(body), DeliveryMode: amqp.Persistent}
 
-	log.Println("1  ** LOCKING CHANNEL")
-	r.Channel.semaphore.Lock()
-	isConnectionDown := r.isConnectionDown()
-	if isConnectionDown {
-		compelteError := "***ERROR*** in " + errorFileIdentification + ": connection is down"
-		log.Println(compelteError)
-		log.Println("1,5  ** LOCKING CHANNEL")
-		r.Connection.semaphore.Lock()
-	}
+	r.PublishData.Channel.WaitForChannel()
 
-	log.Println("2  ** PREPARING PUBLISHER")
-	notifyFlowChannel := NewRabbitMQ().SharesChannelWith(r).PopulatePublish(exchangeName, r.PublishData.ExchangeType, queueName, queueName).preparePublisher()
+	notifyFlowChannel := NewRabbitMQ().PopulatePublish(exchangeName, r.PublishData.ExchangeType, queueName, queueName).SharesPublishChannelWith(r).PublishData.preparePublisher()
 
 	select {
 	case <-notifyFlowChannel:
-		log.Println("3  ** UNLOCKING AT FLOW")
-		r.amqpChannelUnlock(isConnectionDown)
 		compelteError := "in " + errorFileIdentification + ": queue '" + queueName + "' flow is closed"
 		return errors.New(compelteError)
 
 	default:
-		confirmation, err := r.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, queueAccessKey, true, false, message)
+		confirmation, err := r.PublishData.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, queueAccessKey, true, false, message)
 		if err != nil {
-			log.Println("3  ** UNLOCKING AT PUBLISH ERROR")
-			r.amqpChannelUnlock(isConnectionDown)
 			compelteError := "error publishing message in " + errorFileIdentification + ": " + err.Error()
 			return errors.New(compelteError)
 		}
@@ -64,15 +51,11 @@ func (r *RabbitMQ) Publish(body string, exchange string, queue string) (err erro
 		success := confirmation.Wait()
 		if success {
 			confirmation.Confirm(true)
-			log.Println("3  ** UNLOCKING AT SUCESS")
-			r.amqpChannelUnlock(isConnectionDown)
 			log.Println("SUCCESS publishing  on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
 			return nil
 
 		} else {
 			confirmation.Confirm(false)
-			log.Println("3  ** UNLOCKING AT FAILURE")
-			r.amqpChannelUnlock(isConnectionDown)
 			log.Println("FAILED publishing on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
 			return nil
 		}
