@@ -260,15 +260,7 @@ func TestSharesConnectionWith(t *testing.T) {
 func TestSharesPublishChannelWith(t *testing.T) {
 	log.Println("starting TestSharesPublishChannelWith")
 
-	var err error
-
-	baseMessageBroker := rabbitmq.NewRabbitMQ().Connect().PopulatePublish("", "", "", "")
-	defer baseMessageBroker.CloseConnection()
-
-	baseMessageBroker.PublishData.Channel.Channel, err = baseMessageBroker.Connection.Connection.Channel()
-	if err != nil {
-		t.Error("error creating channel " + err.Error())
-	}
+	baseMessageBroker := rabbitmq.NewRabbitMQ().PopulatePublish("", "", "", "")
 
 	messageBroker := rabbitmq.NewRabbitMQ().PopulatePublish("", "", "", "").SharesPublishChannelWith(baseMessageBroker)
 
@@ -288,15 +280,7 @@ func TestSharesPublishChannelWith(t *testing.T) {
 func TestSharesConsumeChannelWith(t *testing.T) {
 	log.Println("starting TestSharesConsumeChannelWith")
 
-	var err error
-
-	baseMessageBroker := rabbitmq.NewRabbitMQ().Connect().PopulateConsume("", "", "", "", 0, false, nil)
-	defer baseMessageBroker.CloseConnection()
-
-	baseMessageBroker.PublishData.Channel.Channel, err = baseMessageBroker.Connection.Connection.Channel()
-	if err != nil {
-		t.Error("error creating channel " + err.Error())
-	}
+	baseMessageBroker := rabbitmq.NewRabbitMQ().PopulateConsume("", "", "", "", 0, false, nil)
 
 	messageBroker := rabbitmq.NewRabbitMQ().PopulateConsume("", "", "", "", 0, false, nil).SharesConsumeChannelWith(baseMessageBroker)
 
@@ -328,7 +312,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 	messageBrokerPublisher := rabbitmq.NewRabbitMQ().Connect().PopulatePublish(exchangeName, exchangeType, queueName, accessKey)
 	defer messageBrokerPublisher.CloseConnection()
 
-	messageBrokerPublisher.PublishData.Channel.CreateChannel()
+	messageBrokerPublisher.PublishData.Channel.CreateChannel(messageBrokerPublisher.Connection)
 	defer messageBrokerPublisher.PublishData.Channel.CloseChannel()
 
 	err = messageBrokerPublisher.Publish("creting queue", "", "")
@@ -382,7 +366,7 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 	messageBrokerConsumer := rabbitmq.NewRabbitMQ().Connect().PopulateConsume(exchangeName, exchangeType, queueName, accessKey, qos, purgeBeforeStarting, queueConsumeChannel)
 	defer messageBrokerConsumer.CloseConnection()
 
-	messageBrokerConsumer.ConsumeData.Channel.CreateChannel()
+	messageBrokerConsumer.ConsumeData.Channel.CreateChannel(messageBrokerConsumer.Connection)
 	defer messageBrokerConsumer.PublishData.Channel.CloseChannel()
 
 	go messageBrokerConsumer.ConsumeForever()
@@ -439,7 +423,7 @@ func TestPersistDataRabbitMQ(t *testing.T) {
 	messageBrokerPublisher := rabbitmq.NewRabbitMQ().Connect().PopulatePublish(exchangeName, exchangeType, queueName, accessKey)
 	defer messageBrokerPublisher.CloseConnection()
 
-	messageBrokerPublisher.PublishData.Channel.CreateChannel()
+	messageBrokerPublisher.PublishData.Channel.CreateChannel(messageBrokerPublisher.Connection)
 	defer messageBrokerPublisher.PublishData.Channel.CloseChannel()
 
 	err := messageBrokerPublisher.PersistData(expectedMessage, "@"+expectedQueueName, "")

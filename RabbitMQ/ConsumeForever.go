@@ -23,7 +23,7 @@ func (r *RabbitMQ) ConsumeForever() {
 
 	go r.ConsumeData.amqpChannelMonitor(incomingDeliveryChannel)
 
-	r.PublishData.Channel.CreateChannel()
+	r.PublishData.Channel.CreateChannel(r.Connection)
 
 	for delivery := range *incomingDeliveryChannel {
 		if delivery.Body == nil {

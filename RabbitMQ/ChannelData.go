@@ -29,11 +29,11 @@ type ChannelData struct {
 /*
 Build an object used to reference a amqp.Channel and store all the data needed to keep track of its health.
 */
-func newChannelData(connection *ConnectionData) *ChannelData {
+func newChannelData() *ChannelData {
 	channelContext, cancelContext := context.WithCancel(context.Background())
 
 	return &ChannelData{
-		Connection:                 connection,
+		Connection:                 &ConnectionData{},
 		Channel:                    &amqp.Channel{},
 		isOpen:                     false,
 		closureNotificationChannel: nil,
@@ -48,13 +48,13 @@ Keep and prepare a channel linked to RabbitMQ connection.
 
 It puts the channel in confirm mode, so any publishing done will have a response from the server.
 */
-func (c *ChannelData) CreateChannel() {
+func (c *ChannelData) CreateChannel(connection *ConnectionData) {
 	errorFileIdentification := "RabbitMQ.go at CreateChannel()"
 
 	for {
-		c.Connection.WaitForConnection()
+		connection.WaitForConnection()
 
-		channel, err := c.Connection.Connection.Channel()
+		channel, err := connection.Connection.Channel()
 		if err != nil {
 			log.Println("error creating RabbitMQ channel in " + errorFileIdentification + ": " + err.Error())
 			continue
@@ -66,7 +66,7 @@ func (c *ChannelData) CreateChannel() {
 			continue
 		}
 
-		c.updateChannel(channel)
+		c.updateChannel(channel, connection)
 
 		go c.keepChannel()
 
@@ -81,8 +81,10 @@ Reference the newly created amqp.Connection, assuring assincronus concurrent acc
 
 Refresh the connection id for controll of references.
 */
-func (c *ChannelData) updateChannel(channel *amqp.Channel) {
+func (c *ChannelData) updateChannel(channel *amqp.Channel, connection *ConnectionData) {
 	c.closureNotificationChannel = channel.NotifyClose(make(chan *amqp.Error))
+
+	c.Connection = connection
 
 	c.Channel = channel
 
@@ -125,7 +127,7 @@ func (c *ChannelData) keepChannel() {
 			Context:                    c.Context,
 		}
 
-		c.CreateChannel()
+		c.CreateChannel(c.Connection)
 	}
 
 	runtime.Goexit()

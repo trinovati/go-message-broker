@@ -168,8 +168,8 @@ The consumed messages will be sended to the channel passed to queueConsumeChanne
 func (r *RabbitMQ) PopulateConsume(exchangeName string, exchangeType string, queueName string, accessKey string, qos int, purgeBeforeStarting bool, queueConsumeChannel chan<- interface{}) *RabbitMQ {
 	if r.ConsumeData == nil {
 		r.ConsumeData = newRMQConsume()
+		r.ConsumeData.Channel = newChannelData()
 	}
-	r.ConsumeData.Channel = newChannelData(r.Connection)
 
 	r.ConsumeData.populate(exchangeName, exchangeType, queueName, accessKey, qos, purgeBeforeStarting, queueConsumeChannel)
 
@@ -188,8 +188,8 @@ Populate the object for a publish behaviour.
 func (r *RabbitMQ) PopulatePublish(exchangeName string, exchangeType string, queueName string, accessKey string) *RabbitMQ {
 	if r.PublishData == nil {
 		r.PublishData = newRMQPublish()
+		r.PublishData.Channel = newChannelData()
 	}
-	r.PublishData.Channel = newChannelData(r.Connection)
 
 	r.PublishData.populate(exchangeName, exchangeType, queueName, accessKey)
 
