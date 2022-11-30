@@ -315,6 +315,8 @@ func TestPublishRabbitMQ(t *testing.T) {
 	messageBrokerPublisher.PublishData.Channel.CreateChannel(messageBrokerPublisher.Connection)
 	defer messageBrokerPublisher.PublishData.Channel.CloseChannel()
 
+	messageBrokerPublisher.PreparePublishQueue()
+
 	err = messageBrokerPublisher.Publish("creting queue", "", "")
 	if err != nil {
 		t.Error("error publishing to queue: " + err.Error())
@@ -405,6 +407,11 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 		t.Error("error deleting queue " + queueName + ": " + err.Error())
 	}
 
+	err = rabbitmq.DeleteQueueAndExchange(messageBrokerConsumer.PublishData.Channel.Channel, queueName, exchangeName, "doit")
+	if err != nil {
+		t.Error("error deleting queue " + queueName + ": " + err.Error())
+	}
+
 	log.Printf("finishing TestConsumeForeverRabbitMQ\n\n")
 }
 
@@ -415,10 +422,8 @@ func TestPersistDataRabbitMQ(t *testing.T) {
 
 	exchangeName := "tests"
 	exchangeType := "direct"
-	queueName := "tests"
+	queueName := exchangeName + "__PersistData()"
 	accessKey := queueName
-
-	expectedQueueName := exchangeName + "__PersistData()"
 
 	messageBrokerPublisher := rabbitmq.NewRabbitMQ().Connect().PopulatePublish(exchangeName, exchangeType, queueName, accessKey)
 	defer messageBrokerPublisher.CloseConnection()
@@ -426,12 +431,14 @@ func TestPersistDataRabbitMQ(t *testing.T) {
 	messageBrokerPublisher.PublishData.Channel.CreateChannel(messageBrokerPublisher.Connection)
 	defer messageBrokerPublisher.PublishData.Channel.CloseChannel()
 
-	err := messageBrokerPublisher.PersistData(expectedMessage, "@"+expectedQueueName, "")
+	messageBrokerPublisher.PreparePublishQueue()
+
+	err := messageBrokerPublisher.PersistData(expectedMessage, "", "")
 	if err != nil {
 		t.Error("error persisting data: " + err.Error())
 	}
 
-	delivery, _, err := messageBrokerPublisher.PublishData.Channel.Channel.Get(expectedQueueName, true)
+	delivery, _, err := messageBrokerPublisher.PublishData.Channel.Channel.Get(queueName, true)
 	if err != nil {
 		t.Error("error consuming message: " + err.Error())
 	}
@@ -442,7 +449,7 @@ func TestPersistDataRabbitMQ(t *testing.T) {
 		}
 	}
 
-	err = rabbitmq.DeleteQueueAndExchange(messageBrokerPublisher.PublishData.Channel.Channel, expectedQueueName, exchangeName, "doit")
+	err = rabbitmq.DeleteQueueAndExchange(messageBrokerPublisher.PublishData.Channel.Channel, queueName, exchangeName, "doit")
 	if err != nil {
 		t.Error("error deleting queue and exchange: " + err.Error())
 	}

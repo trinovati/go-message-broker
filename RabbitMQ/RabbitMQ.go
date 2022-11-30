@@ -3,6 +3,7 @@ package rabbitmq
 import (
 	"errors"
 	"log"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -174,6 +175,52 @@ func (r *RabbitMQ) PopulatePublish(exchangeName string, exchangeType string, que
 	r.PublishData.populate(exchangeName, exchangeType, queueName, accessKey)
 
 	return r
+}
+
+/*
+Prepare a queue linked to RabbitMQ channel for publishing.
+
+In case of unexistent exchange, it will create the exchange.
+
+In case of unexistent queue, it will create the queue.
+
+In case of queue not beeing binded to any exchange, it will bind it to a exchange.
+*/
+func (r *RabbitMQ) PreparePublishQueue() {
+	errorFileIdentification := "RabbitMQ.go at PreparePublishQueue()"
+
+	for {
+		r.PublishData.Channel.WaitForChannel()
+
+		err := r.PublishData.Channel.Channel.ExchangeDeclare(r.PublishData.ExchangeName, r.PublishData.ExchangeType, true, false, false, false, nil)
+		if err != nil {
+			log.Println("***ERROR*** error creating RabbitMQ exchange in " + errorFileIdentification + ": " + err.Error())
+			time.Sleep(time.Second)
+			continue
+		}
+
+		queue, err := r.PublishData.Channel.Channel.QueueDeclare(r.PublishData.QueueName, true, false, false, false, nil)
+		if err != nil {
+			log.Println("***ERROR*** error creating queue in " + errorFileIdentification + ": " + err.Error())
+			time.Sleep(time.Second)
+			continue
+		}
+
+		if queue.Name != r.PublishData.QueueName {
+			log.Println("***ERROR***v in " + errorFileIdentification + ": created queue name '" + queue.Name + "' and expected queue name '" + r.PublishData.QueueName + "' are diferent")
+			time.Sleep(time.Second)
+			continue
+		}
+
+		err = r.PublishData.Channel.Channel.QueueBind(r.PublishData.QueueName, r.PublishData.AccessKey, r.PublishData.ExchangeName, false, nil)
+		if err != nil {
+			log.Println("***ERROR*** error binding queue in " + errorFileIdentification + ": " + err.Error())
+			time.Sleep(time.Second)
+			continue
+		}
+
+		return
+	}
 }
 
 /*

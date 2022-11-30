@@ -1,11 +1,5 @@
 package rabbitmq
 
-import (
-	"errors"
-	"log"
-	"time"
-)
-
 /*
 Object that holds all information needed for publishing into a RabbitMQ queue.
 */
@@ -35,75 +29,4 @@ func (p *RMQPublish) populate(exchangeName string, exchangeType string, QueueNam
 	p.ExchangeType = exchangeType
 	p.QueueName = QueueName
 	p.AccessKey = AccessKey
-}
-
-/*
-Will create a connection, prepare channels, declare queue and exchange case needed.
-
-If an error occurs, it will restart and retry all the process until the publisher is fully prepared.
-
-Return a channel of flow notifications.
-*/
-func (p *RMQPublish) preparePublisher() (notifyFlowChannel chan bool) {
-	errorFileIdentification := "RMQPublish.go at preparePublisher()"
-
-	for {
-		p.Channel.WaitForChannel()
-
-		err := p.preparePublishQueue()
-		if err != nil {
-			log.Println("***ERROR*** error preparing channel in " + errorFileIdentification + ": " + err.Error())
-			time.Sleep(time.Second)
-			continue
-		}
-
-		if p.Channel.isChannelDown() {
-			log.Println("***ERROR*** in " + errorFileIdentification + ": connection dropped before preparing notify flow channel, trying again soon")
-			time.Sleep(time.Second)
-			continue
-		}
-
-		notifyFlowChannel := p.Channel.Channel.NotifyFlow(make(chan bool))
-
-		return notifyFlowChannel
-	}
-}
-
-/*
-Prepare a queue linked to RabbitMQ channel for publishing.
-
-In case of unexistent exchange, it will create the exchange.
-
-In case of unexistent queue, it will create the queue.
-
-In case of queue not beeing binded to any exchange, it will bind it to a exchange.
-*/
-func (p *RMQPublish) preparePublishQueue() (err error) {
-	errorFileIdentification := "RMQPublish.go at prepareQueue()"
-
-	if p.Channel.isChannelDown() {
-		completeError := "in " + errorFileIdentification + ": connection dropped before declaring exchange, trying again soon"
-		return errors.New(completeError)
-	}
-
-	err = p.Channel.Channel.ExchangeDeclare(p.ExchangeName, p.ExchangeType, true, false, false, false, nil)
-	if err != nil {
-		return errors.New("error creating RabbitMQ exchange in " + errorFileIdentification + ": " + err.Error())
-	}
-
-	queue, err := p.Channel.Channel.QueueDeclare(p.QueueName, true, false, false, false, nil)
-	if err != nil {
-		return errors.New("error creating queue in " + errorFileIdentification + ": " + err.Error())
-	}
-
-	if queue.Name != p.QueueName {
-		return errors.New("in " + errorFileIdentification + ": created queue name '" + queue.Name + "' and expected queue name '" + p.QueueName + "' are diferent")
-	}
-
-	err = p.Channel.Channel.QueueBind(p.QueueName, p.AccessKey, p.ExchangeName, false, nil)
-	if err != nil {
-		return errors.New("error binding queue in " + errorFileIdentification + ": " + err.Error())
-	}
-
-	return nil
 }

@@ -33,9 +33,7 @@ func (r *RabbitMQ) Publish(body string, exchange string, queue string) (err erro
 	message := amqp.Publishing{ContentType: "application/json", Body: []byte(body), DeliveryMode: amqp.Persistent}
 
 	r.PublishData.Channel.WaitForChannel()
-
-	publisher := NewRabbitMQ().PopulatePublish(exchangeName, r.PublishData.ExchangeType, queueName, queueName).SetPublishChannel(r.PublishData.Channel)
-	notifyFlowChannel := publisher.PublishData.preparePublisher()
+	notifyFlowChannel := r.PublishData.Channel.Channel.NotifyFlow(make(chan bool))
 
 	select {
 	case <-notifyFlowChannel:
@@ -43,7 +41,7 @@ func (r *RabbitMQ) Publish(body string, exchange string, queue string) (err erro
 		return errors.New(compelteError)
 
 	default:
-		confirmation, err := publisher.PublishData.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, queueAccessKey, true, false, message)
+		confirmation, err := r.PublishData.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, queueAccessKey, true, false, message)
 		if err != nil {
 			compelteError := "error publishing message in " + errorFileIdentification + ": " + err.Error()
 			return errors.New(compelteError)

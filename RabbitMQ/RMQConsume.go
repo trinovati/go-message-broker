@@ -54,8 +54,8 @@ If an error occurs, it will restart and retry all the process until the consumer
 
 Return a channel of incoming deliveries.
 */
-func (c *RMQConsume) prepareConsumer() (incomingDeliveryChannel <-chan amqp.Delivery) {
-	errorFileIdentification := "RMQConsume.go at prepareChannel()"
+func (c *RMQConsume) prepareLoopingConsumer() (incomingDeliveryChannel <-chan amqp.Delivery) {
+	errorFileIdentification := "RMQConsume.go at prepareLoopingConsumer()"
 
 	for {
 		c.Channel.WaitForChannel()

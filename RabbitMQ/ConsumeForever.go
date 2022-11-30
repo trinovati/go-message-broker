@@ -19,11 +19,12 @@ In case of the connections and/or channel comes down, it prepres for consuming a
 */
 func (r *RabbitMQ) ConsumeForever() {
 	incomingDeliveryChannel := new(<-chan amqp.Delivery)
-	*incomingDeliveryChannel = r.ConsumeData.prepareConsumer()
+	*incomingDeliveryChannel = r.ConsumeData.prepareLoopingConsumer()
 
 	go r.ConsumeData.amqpChannelMonitor(incomingDeliveryChannel)
 
 	r.PublishData.Channel.CreateChannel(r.Connection)
+	r.PreparePublishQueue()
 
 	for delivery := range *incomingDeliveryChannel {
 		if delivery.Body == nil {
@@ -49,7 +50,7 @@ func (c *RMQConsume) amqpChannelMonitor(incomingDeliveryChannel *(<-chan amqp.De
 		if c.Channel.isChannelDown() {
 			c.Channel.WaitForChannel()
 
-			*incomingDeliveryChannel = c.prepareConsumer()
+			*incomingDeliveryChannel = c.prepareLoopingConsumer()
 
 		} else {
 			time.Sleep(500 * time.Millisecond)
