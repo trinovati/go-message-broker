@@ -141,6 +141,7 @@ func (r *RabbitMQ) GetPopulatedDataFrom(rabbitmq *RabbitMQ) *RabbitMQ {
 			AccessKey:                 rabbitmq.ConsumeData.AccessKey,
 			Qos:                       rabbitmq.ConsumeData.Qos,
 			PurgeBeforeStarting:       rabbitmq.ConsumeData.PurgeBeforeStarting,
+			Channel:                   newChannelData(),
 		}
 	}
 
@@ -150,6 +151,7 @@ func (r *RabbitMQ) GetPopulatedDataFrom(rabbitmq *RabbitMQ) *RabbitMQ {
 			ExchangeType: rabbitmq.PublishData.ExchangeType,
 			QueueName:    rabbitmq.PublishData.QueueName,
 			AccessKey:    rabbitmq.PublishData.AccessKey,
+			Channel:      newChannelData(),
 		}
 	}
 
