@@ -51,6 +51,8 @@ It puts the channel in confirm mode, so any publishing done will have a response
 func (c *ChannelData) CreateChannel(connection *ConnectionData) {
 	errorFileIdentification := "RabbitMQ.go at CreateChannel()"
 
+	serverAddress := strings.Split(strings.Split(c.Connection.serverAddress, "@")[1], ":")[0]
+
 	for {
 		connection.WaitForConnection()
 
@@ -65,6 +67,8 @@ func (c *ChannelData) CreateChannel(connection *ConnectionData) {
 			log.Println("error configuring channel with Confirm() protocol in " + errorFileIdentification + ": " + err.Error())
 			continue
 		}
+
+		log.Println("Successful produced a channel with RabbitMQ server '" + serverAddress + "'")
 
 		c.updateChannel(channel, connection)
 
