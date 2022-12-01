@@ -14,7 +14,7 @@ Object that holds all information needed for consuming from RabbitMQ queue.
 */
 type RMQConsume struct {
 	Channel                   *ChannelData
-	OutgoingDeliveryChannel   chan<- interface{}
+	OutgoingDeliveryChannel   chan interface{}
 	UnacknowledgedDeliveryMap *sync.Map
 	ExchangeName              string
 	ExchangeType              string
@@ -37,7 +37,7 @@ func newRMQConsume() *RMQConsume {
 /*
 Insert data into the object used for RabbitMQ queue consume.
 */
-func (c *RMQConsume) populate(exchangeName string, exchangeType string, QueueName string, AccessKey string, qos int, purgeBeforeStarting bool, outgoingDeliveryChannel chan<- interface{}) {
+func (c *RMQConsume) populate(exchangeName string, exchangeType string, QueueName string, AccessKey string, qos int, purgeBeforeStarting bool, outgoingDeliveryChannel chan interface{}) {
 	c.ExchangeName = exchangeName
 	c.ExchangeType = exchangeType
 	c.QueueName = QueueName

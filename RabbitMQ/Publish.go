@@ -14,7 +14,7 @@ Publish data to the queue linked to RabbitMQ.PublishData object.
 
 body is the string to be queued.
 
-newQueue and newExchange are optional for a publishing in a diferent location than objects holds. Case it is empty string, will be used the location stored at object.
+queue and exchange are optional for a publishing in a diferent location than objects holds. Case it is empty string, will be used the location stored at object.
 */
 func (r *RabbitMQ) Publish(body string, exchange string, queue string) (err error) {
 	errorFileIdentification := "RabbitMQ.go at Publish()"

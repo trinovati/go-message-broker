@@ -28,8 +28,6 @@ type ConnectionData struct {
 
 /*
 Build an object used to reference a amqp.Connection and store all the data needed to keep track of its health.
-
-It has a semaphore to controll assincronus access to server, and suports shared access by multiple objects.
 */
 func newConnectionData() *ConnectionData {
 	connectionContext, cancelContext := context.WithCancel(context.Background())
@@ -77,9 +75,11 @@ func (r *RabbitMQ) Connect() *RabbitMQ {
 		}
 
 		time.Sleep(2 * time.Second)
-		log.Println("Successful RabbitMQ connection with id " + strconv.FormatUint(r.Connection.ConnectionId, 10) + " at server '" + serverAddress + "'")
 
 		r.Connection.updateConnection(connection)
+		log.Println("Successful RabbitMQ connection with id " + strconv.FormatUint(r.Connection.ConnectionId, 10) + " at server '" + serverAddress + "'")
+
+		r.Connection.isOpen = true
 
 		go r.keepConnection()
 
@@ -99,8 +99,6 @@ func (c *ConnectionData) updateConnection(connection *amqp.Connection) {
 
 	c.Connection = connection
 	c.ConnectionId++
-
-	c.isOpen = true
 }
 
 /*
@@ -144,12 +142,14 @@ func (r *RabbitMQ) keepConnection() {
 
 			r.Connect()
 		}
-
 	}
 
 	runtime.Goexit()
 }
 
+/*
+Method for closing the connection via context, sending  signal for all objects sharring connection to terminate its process.
+*/
 func (r *RabbitMQ) CloseConnection() {
 	r.Connection.CancelContext()
 
@@ -164,7 +164,7 @@ func (c *ConnectionData) IsConnectionDown() bool {
 }
 
 /*
-Wait for the connection to be open.
+Block the process until the connection is open.
 */
 func (c *ConnectionData) WaitForConnection() {
 	for {

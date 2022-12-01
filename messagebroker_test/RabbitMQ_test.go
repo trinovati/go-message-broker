@@ -376,7 +376,7 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 	time.Sleep(time.Second)
 
 	for _, expectedMessage := range messages {
-		confirmation, err := messageBrokerConsumer.PublishData.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, accessKey, true, false, amqp.Publishing{Body: []byte(expectedMessage)})
+		confirmation, err := messageBrokerConsumer.ConsumeData.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, accessKey, true, false, amqp.Publishing{Body: []byte(expectedMessage)})
 		if err != nil {
 			t.Error("error publishing message to RabbitMQ: " + err.Error())
 		}
@@ -388,7 +388,7 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 
 		recievedMessage := <-queueConsumeChannel
 
-		transmissionData := string(recievedMessage.(*messagebroker.MessageBrokerConsumedMessage).TransmissionData.([]byte))
+		transmissionData := string(recievedMessage.(*messagebroker.MessageBrokerConsumedMessage).MessageData.([]byte))
 
 		{
 			if transmissionData != expectedMessage {

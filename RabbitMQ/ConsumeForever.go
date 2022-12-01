@@ -43,7 +43,7 @@ func (r *RabbitMQ) ConsumeForever() {
 
 			consumedMessage := messagebroker.NewMessageBrokerConsumedMessage()
 			consumedMessage.MessageId = messageId
-			consumedMessage.TransmissionData = delivery.Body
+			consumedMessage.MessageData = delivery.Body
 
 			r.ConsumeData.OutgoingDeliveryChannel <- consumedMessage
 		}

@@ -55,7 +55,7 @@ func (r *RabbitMQ) WithTerminateOnConnectionError(terminate bool) *RabbitMQ {
 }
 
 /*
-Will make both objects share the same connection information and server interaction semaphore for assincronus access.
+Will make both objects share the same connection information for assincronus access.
 */
 func (r *RabbitMQ) SharesConnectionWith(rabbitmq *RabbitMQ) *RabbitMQ {
 	errorFileIdentification := "RabbitMQ.go at SharesConnectionWith()"
@@ -73,7 +73,10 @@ func (r *RabbitMQ) SharesConnectionWith(rabbitmq *RabbitMQ) *RabbitMQ {
 }
 
 /*
-Will make both objects share the same channel, connection information and server interaction.
+Will make both objects share the same channel and connection information for assincronus access.
+
+CAUTION: Connection is one for entire object, but there are channel for consume and for publish.
+In this case, only consume channel will be shared.
 */
 func (r *RabbitMQ) SetConsumeChannel(channel *ChannelData) *RabbitMQ {
 	r.Connection = channel.Connection
@@ -84,7 +87,10 @@ func (r *RabbitMQ) SetConsumeChannel(channel *ChannelData) *RabbitMQ {
 }
 
 /*
-Will make both objects share the same channel, connection information and server interaction.
+Will make both objects share the same channel and connection information for assincronus access.
+
+CAUTION: Connection is one for entire object, but there are channel for consume and for publish.
+In this case, only publish channel will be shared.
 */
 func (r *RabbitMQ) SetPublishChannel(channel *ChannelData) *RabbitMQ {
 	r.Connection = channel.Connection
@@ -138,13 +144,13 @@ func (r *RabbitMQ) GetPopulatedDataFrom(rabbitmq *RabbitMQ) *RabbitMQ {
 /*
 Populate the object for a consume behaviour.
 
-NEVER USE THE SAME OBJECT FOR CONSUME AND PUBLISHING.
+CAUTION: NEVER USE THE SAME OBJECT FOR CONSUME AND PUBLISHING.
 Keep in mind that PublishData object will be filled with standard failed messages queue data used by Acknowledge() to store failed messages.
 You can use PopulatePublish() afterwards for customization of failed messages destination queue.
 
 The consumed messages will be sended to the channel passed to queueConsumeChannel.
 */
-func (r *RabbitMQ) PopulateConsume(exchangeName string, exchangeType string, queueName string, accessKey string, qos int, purgeBeforeStarting bool, queueConsumeChannel chan<- interface{}) *RabbitMQ {
+func (r *RabbitMQ) PopulateConsume(exchangeName string, exchangeType string, queueName string, accessKey string, qos int, purgeBeforeStarting bool, queueConsumeChannel chan interface{}) *RabbitMQ {
 	if r.ConsumeData == nil {
 		r.ConsumeData = newRMQConsume()
 		r.ConsumeData.Channel = newChannelData()

@@ -28,6 +28,7 @@ var (
 	RABBITMQ_RPC_CLIENT = "rpc_client"
 	RABBITMQ_RPC_SERVER = "rpc_server"
 	RABBITMQ_CLIENT     = "client"
+
 	/*
 		Environmental variable that indicates if the pod is a client or a server.
 	*/

@@ -1,0 +1,2 @@
+IMPROVEMENTS *******************************************
+- Implementar context para publicação dinamica em diferentes filas e exchanges.

@@ -15,7 +15,7 @@ import (
 Object used to reference a amqp.Channel address.
 
 Since the connection have a intimate relation with the address of amqp.Channel, it could not be moved to another memory position for
-shared channel purposes, so all shared channels points toward this object, and in case of channel remake, this object will point towards it.
+shared channel purposes, so all shared channels ChannelData objects points toward one object, and in case of channel remake, ChannelData object will point towards it.
 */
 type ChannelData struct {
 	Connection                 *ConnectionData
@@ -47,7 +47,10 @@ func newChannelData() *ChannelData {
 }
 
 /*
-Keep and prepare a channel linked to RabbitMQ connection.
+Create and keep a channel linked to RabbitMQ connection.
+
+If channel is dropped for any reason it will try remake the channel.
+To terminante the channel, use CloseChannel() method, it will close the channel via context.Done().
 
 It puts the channel in confirm mode, so any publishing done will have a response from the server.
 */
@@ -72,9 +75,10 @@ func (c *ChannelData) CreateChannel(connection *ConnectionData) {
 		}
 
 		time.Sleep(2 * time.Second)
-		log.Println("Successful produced a RabbitMQ channel with id " + strconv.FormatUint(c.ChannelId, 10) + " at server '" + serverAddress + "'")
 
 		c.updateChannel(channel, connection)
+		log.Println("Successful produced a RabbitMQ channel with id " + strconv.FormatUint(c.ChannelId, 10) + " at server '" + serverAddress + "'")
+		c.isOpen = true
 
 		go c.keepChannel()
 
@@ -85,9 +89,9 @@ func (c *ChannelData) CreateChannel(connection *ConnectionData) {
 /*
 Refresh the closureNotificationChannel for helthyness.
 
-Reference the newly created amqp.Connection, assuring assincronus concurrent access to multiple objects.
+Reference the newly created amqp.Channel, assuring assincronus concurrent access to multiple objects.
 
-Refresh the connection id for controll of references.
+Refresh the channel id for controll of references.
 */
 func (c *ChannelData) updateChannel(channel *amqp.Channel, connection *ConnectionData) {
 	c.closureNotificationChannel = channel.NotifyClose(make(chan *amqp.Error))
@@ -96,12 +100,10 @@ func (c *ChannelData) updateChannel(channel *amqp.Channel, connection *Connectio
 
 	c.Channel = channel
 	c.ChannelId++
-
-	c.isOpen = true
 }
 
 /*
-Method for maintance of channel.
+Method for maintance of a channel.
 */
 func (c *ChannelData) keepChannel() {
 	errorFileIdentification := "RabbitMQ.go at keepChannel()"
@@ -144,6 +146,9 @@ func (c *ChannelData) keepChannel() {
 
 }
 
+/*
+Method for closing the channel via context, sending  signal for all objects sharring channel to terminate its process.
+*/
 func (c *ChannelData) CloseChannel() {
 	c.CancelContext()
 
@@ -158,7 +163,7 @@ func (c *ChannelData) isChannelDown() bool {
 }
 
 /*
-Wait for the channel to be open.
+Block the process until the channel is open.
 */
 func (c *ChannelData) WaitForChannel() {
 	for {
