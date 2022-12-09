@@ -63,17 +63,20 @@ func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, o
 			failureTime := time.Now().Format("2006-01-02 15:04:05Z07:00")
 			failureMessage := `{"filure_time":"` + failureTime + `","error":"` + comment + `","message":"` + string(message.Body) + `"}`
 
-			var splittedOptionalRoute []string
+			var failedNotifyExchangeName string = ""
+			var failedNotifyQueueName string = ""
 			if optionalRoute != "" {
-				splittedOptionalRoute = strings.Split(optionalRoute, "@")
-				if len(splittedOptionalRoute) != 2 {
+				splittedOptionalRoute := strings.Split(optionalRoute, "@")
+				if len(splittedOptionalRoute) == 2 {
+					failedNotifyExchangeName = splittedOptionalRoute[0]
+					failedNotifyQueueName = splittedOptionalRoute[1]
 
 				} else {
 					log.Println("there was a optional route for failed message destiny, but it have come with unexpected format: '" + optionalRoute + "', publishing in standard queue")
 				}
 			}
 
-			err := consumer.FailedMessagePublisher.Publish(failureMessage, splittedOptionalRoute[0], splittedOptionalRoute[1])
+			err := consumer.FailedMessagePublisher.Publish(failureMessage, failedNotifyExchangeName, failedNotifyQueueName)
 			if err != nil {
 				log.Println("error publishing to failure queue in " + errorFileIdentification + ": " + err.Error())
 			}
