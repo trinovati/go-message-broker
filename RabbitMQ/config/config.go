@@ -1,4 +1,4 @@
-package rabbitmq
+package config
 
 import "os"
 
@@ -18,7 +18,16 @@ func GetEnvOrDefault(environmentVariableName string, defaultValue string) string
 Environmental variable used by RabbitMQ service for connection with server.
 */
 var (
-	RABBITMQ_SERVER = GetEnvOrDefault("RABBITMQ_SERVER", "amqp://guest:guest@localhost:5672/")
+	RABBITMQ_PROTOCOL = GetEnvOrDefault("RABBITMQ_PROTOCOL", "amqp")
+	RABBITMQ_SERVER   = GetEnvOrDefault("RABBITMQ_SERVER", "guest:guest@localhost:5672")
+)
+
+/*
+Value for identification of object behavior.
+*/
+var (
+	RABBITMQ_PUBLISHER_BEHAVIOUR = "consumer"
+	RABBITMQ_CONSUMER_BEHAVIOUR  = "publisher"
 )
 
 /*

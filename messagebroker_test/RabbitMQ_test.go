@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,290 +12,484 @@ import (
 
 	messagebroker "gitlab.com/aplicacao/trinovati-connector-message-brokers"
 	rabbitmq "gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/config"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/dto"
 )
 
-func TestPopulatePublishRabbitMQ(t *testing.T) {
-	log.Println("starting TestPopulatePublishRabbitMQ")
-	exchangeName := "exchange"
-	exchangeType := "type"
-	queueName := "queue_name"
-	queueAccessKey := "access_key"
+func TestPersistDataRabbitMQ(t *testing.T) {
+	log.Println("starting TestPersistDataRabbitMQ")
 
-	messageBroker := rabbitmq.NewRabbitMQ().PopulatePublish(exchangeName, exchangeType, queueName, queueAccessKey)
+	expectedMessage := "teste"
+
+	exchangeName := "tests"
+	exchangeType := "direct"
+	queueName := exchangeName + "__PersistData()"
+	accessKey := queueName
+
+	messageBroker := rabbitmq.NewRabbitMQ().
+		AddBehaviour(rabbitmq.NewPublisher())
+
+	messageBroker.Behaviour[0].CreateChannel()
+
+	publishBehaviourDto := dto.NewBehaviourDto().FillPublisherData(exchangeName, exchangeType, queueName, accessKey)
+	messageBroker.Behaviour[0].Populate(publishBehaviourDto)
+
+	messageBroker.Behaviour[0].(*rabbitmq.Publisher).PreparePublishQueue()
+
+	err := messageBroker.PersistData(expectedMessage, "", "")
+	if err != nil {
+		t.Error("error persisting data: " + err.Error())
+	}
+
+	delivery, _, err := messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Channel.Get(queueName, true)
+	if err != nil {
+		t.Error("error consuming message: " + err.Error())
+	}
 
 	{
-		if messageBroker.PublishData.ExchangeName != exchangeName {
-			t.Error("error at ExchangeName.\nexpected: " + exchangeName + "\ngot:      " + messageBroker.PublishData.ExchangeName)
-		}
-
-		if messageBroker.PublishData.ExchangeType != exchangeType {
-			t.Error("error at ExchangeType.\nexpected: " + exchangeType + "\ngot:      " + messageBroker.PublishData.ExchangeType)
-		}
-
-		if messageBroker.PublishData.QueueName != queueName {
-			t.Error("error at QueueName.\nexpected: " + queueName + "\ngot:      " + messageBroker.PublishData.QueueName)
-		}
-
-		if messageBroker.PublishData.AccessKey != queueAccessKey {
-			t.Error("error at AccessKey.\nexpected: " + queueAccessKey + "\ngot:      " + messageBroker.PublishData.AccessKey)
-		}
-
-		if messageBroker.ConsumeData != nil {
-			t.Error("error at ConsumeData. Should be a nil pointer, since PopulatePublish should not touch ConsumeData")
-		}
-
-		if messageBroker.Connection == nil {
-			t.Error("error at Connection. Should not be a valid pointer")
+		if string(delivery.Body) != expectedMessage {
+			t.Error("error persisting data.\nexpected: " + expectedMessage + "\ngot:      " + string(delivery.Body))
 		}
 	}
 
-	log.Printf("finished TestPopulatePublishRabbitMQ\n\n")
+	err = rabbitmq.DeleteQueueAndExchange(messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Channel, queueName, exchangeName, "doit")
+	if err != nil {
+		t.Error("error deleting queue and exchange: " + err.Error())
+	}
+
+	messageBroker.Behaviour[0].CloseConnection()
+
+	log.Printf("finishing TestPersistDataRabbitMQ\n\n\n")
 }
 
-func TestPopulateConsumeRabbitMQ(t *testing.T) {
-	log.Println("stating TestPopulateConsumeRabbitMQ")
+func TestConnectionDataRabbitMQ(t *testing.T) {
+	log.Printf("starting TestConnectionDataRabbitMQ\n")
 
-	exchangeName := "exchange"
-	exchangeType := "type"
-	queueName := "queue_name"
-	queueAccessKey := "access_key"
+	messageBroker := rabbitmq.NewRabbitMQ().
+		AddBehaviour(rabbitmq.NewPublisher()).
+		AddBehaviour(rabbitmq.NewConsumer())
+
+	messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Connection.Connect()
+	messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.Connection.Connect()
+
+	{
+		if messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Connection.ConnectionId != 1 {
+			t.Error("error at publisher Connection id.\nexpected: " + strconv.Itoa(1) + "\ngot:      " + strconv.FormatUint(messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Connection.ConnectionId, 10))
+		}
+
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.Connection.ConnectionId != 1 {
+			t.Error("error at consumer Connection id.\nexpected: " + strconv.Itoa(1) + "\ngot:      " + strconv.FormatUint(messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.Connection.ConnectionId, 10))
+		}
+
+		if messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Connection.IsConnectionDown() {
+			t.Error("error at publisher Connection.IsConnectionDown, connection should be up")
+		}
+
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.Connection.IsConnectionDown() {
+			t.Error("error at consumer Connection.IsConnectionDown, connection should be up")
+		}
+
+		messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Connection.Connection.Close()
+		time.Sleep(time.Millisecond * 50)
+		if !messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Connection.IsConnectionDown() {
+			t.Error("error at publisher IsConnectionDown, channel should be down")
+		}
+
+		messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Connection.WaitForConnection()
+		if messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Connection.ConnectionId != 2 {
+			t.Error("error at publisher connection id.\nexpected: " + strconv.Itoa(2) + "\ngot:      " + strconv.FormatUint(messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Connection.ConnectionId, 10))
+		}
+
+		messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.Connection.Connection.Close()
+		time.Sleep(time.Millisecond * 50)
+		if !messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.Connection.IsConnectionDown() {
+			t.Error("error at consumer IsConnectionDown, channel should be down")
+		}
+
+		messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.Connection.WaitForConnection()
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.Connection.ConnectionId != 2 {
+			t.Error("error at consumer connection id.\nexpected: " + strconv.Itoa(2) + "\ngot:      " + strconv.FormatUint(messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.Connection.ConnectionId, 10))
+		}
+	}
+
+	messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Connection.CloseConnection()
+	messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.Connection.CloseConnection()
+
+	{
+		if !messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Connection.IsConnectionDown() {
+			t.Error("error at IsConnectionDown, channel should be down")
+		}
+
+		if !messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.Connection.IsConnectionDown() {
+			t.Error("error at IsConnectionDown, channel should be down")
+		}
+	}
+
+	messageBroker.Behaviour[0].(*rabbitmq.Publisher).CloseConnection()
+	messageBroker.Behaviour[1].(*rabbitmq.Consumer).CloseConnection()
+
+	log.Printf("finishing TestConnectionDataRabbitMQ\n\n\n")
+}
+
+func TestChannelDataRabbitMQ(t *testing.T) {
+	log.Printf("starting TestChannelDataRabbitMQ\n")
+
+	messageBroker := rabbitmq.NewRabbitMQ().
+		AddBehaviour(rabbitmq.NewPublisher()).
+		AddBehaviour(rabbitmq.NewConsumer())
+
+	messageBroker.Behaviour[0].CreateChannel()
+	messageBroker.Behaviour[1].CreateChannel()
+
+	{
+		if messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.ChannelId != 1 {
+			t.Error("error at Channel id.\nexpected: " + strconv.Itoa(1) + "\ngot:      " + strconv.FormatUint(messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.ChannelId, 10))
+		}
+
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.ChannelId != 1 {
+			t.Error("error at BehaviourType.\nexpected: " + strconv.Itoa(1) + "\ngot:      " + strconv.FormatUint(messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.ChannelId, 10))
+		}
+
+		if messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.IsChannelDown() {
+			t.Error("error at IsChannelDown, channel should be up")
+		}
+
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.IsChannelDown() {
+			t.Error("error at IsChannelDown, channel should be up")
+		}
+
+		messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Channel.Close()
+		time.Sleep(time.Millisecond * 50)
+		if !messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.IsChannelDown() {
+			t.Error("error at IsChannelDown, channel should be down")
+		}
+
+		messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.WaitForChannel()
+		if messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.ChannelId != 2 {
+			t.Error("error at Channel id.\nexpected: " + strconv.Itoa(2) + "\ngot:      " + strconv.FormatUint(messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.ChannelId, 10))
+		}
+
+		messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.Channel.Close()
+		time.Sleep(time.Millisecond * 50)
+		if !messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.IsChannelDown() {
+			t.Error("error at IsChannelDown, channel should be down")
+		}
+
+		messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.WaitForChannel()
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.ChannelId != 2 {
+			t.Error("error at IsChannelDown.\nexpected: " + strconv.Itoa(2) + "\ngot:      " + strconv.FormatUint(messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.ChannelId, 10))
+		}
+	}
+
+	messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.CloseChannel()
+	messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.CloseChannel()
+
+	{
+		if !messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.IsChannelDown() {
+			t.Error("error at IsChannelDown, channel should be down")
+		}
+
+		if !messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.IsChannelDown() {
+			t.Error("error at IsChannelDown, channel should be down")
+		}
+	}
+
+	messageBroker.Behaviour[0].(*rabbitmq.Publisher).CloseConnection()
+	messageBroker.Behaviour[1].(*rabbitmq.Consumer).CloseConnection()
+	messageBroker.Behaviour[1].(*rabbitmq.Consumer).FailedMessagePublisher.CloseConnection()
+
+	log.Printf("starting TestChannelDataRabbitMQ\n\n\n")
+}
+
+func TestPopulateRabbitMQ(t *testing.T) {
+	log.Printf("starting TestPopulateRabbitMQ\n")
+	publisherExchangeName := "publisher_exchange"
+	publisherExchangeType := "publisher_type"
+	publisherQueueName := "publisher_queue_name"
+	publisherAccessKey := "publisher_access_key"
+
+	consumerExchangeName := "consumer_exchange"
+	consumerExchangeType := "consumer_type"
+	consumerQueueName := "consumer_queue_name"
+	consumerAccessKey := "consumer_access_key"
 	qos := 2
 	purgeBeforeStarting := true
 	outgoingDeliveryChannel := make(chan interface{})
+	unacknowledgedDeliveryMap := &sync.Map{}
 
-	expectedFailedMessagesExchangeName := "failed"
-	expectedFailedMessagesExchangetype := "direct"
-	expectedFailedMessagesQueueName := "_" + exchangeName + "__failed_messages"
-	expectedFailedMessagesAccessKey := expectedFailedMessagesQueueName
+	expectedFailedMessagesPublisherExchangeName := "failed"
+	expectedFailedMessagesPublisherExchangetype := "direct"
+	expectedFailedMessagesPublisherQueueName := "_" + consumerExchangeName + "__failed_messages"
+	expectedFailedMessagesPublisherAccessKey := expectedFailedMessagesPublisherQueueName
 
-	messageBroker := rabbitmq.NewRabbitMQ().PopulateConsume(exchangeName, exchangeType, queueName, queueAccessKey, qos, purgeBeforeStarting, outgoingDeliveryChannel)
+	publisherBehaviourDto := dto.NewBehaviourDto().FillPublisherData(publisherExchangeName, publisherExchangeType, publisherQueueName, publisherAccessKey)
+	consumerBehaviourDto := dto.NewBehaviourDto().FillConsumerData(consumerExchangeName, consumerExchangeType, consumerQueueName, consumerAccessKey, qos, purgeBeforeStarting, outgoingDeliveryChannel, unacknowledgedDeliveryMap)
+
+	messageBroker := rabbitmq.NewRabbitMQ().
+		AddBehaviour(rabbitmq.NewPublisher()).
+		AddBehaviour(rabbitmq.NewConsumer())
+
+	messageBroker.Behaviour[0].Populate(publisherBehaviourDto)
+	messageBroker.Behaviour[1].Populate(consumerBehaviourDto)
 
 	{
-		if messageBroker.ConsumeData.ExchangeName != exchangeName {
-			t.Error("error at ExchangeName.\nexpected: " + exchangeName + "\ngot:      " + messageBroker.PublishData.ExchangeName)
+		if messageBroker.Behaviour[0].(*rabbitmq.Publisher).BehaviourType != config.RABBITMQ_PUBLISHER_BEHAVIOUR {
+			t.Error("error at BehaviourType.\nexpected: " + config.RABBITMQ_PUBLISHER_BEHAVIOUR + "\ngot:      " + messageBroker.Behaviour[0].(*rabbitmq.Publisher).BehaviourType)
 		}
 
-		if messageBroker.ConsumeData.ExchangeType != exchangeType {
-			t.Error("error at ExchangeType.\nexpected: " + exchangeType + "\ngot:      " + messageBroker.ConsumeData.ExchangeType)
+		if messageBroker.Behaviour[0].(*rabbitmq.Publisher).ExchangeName != publisherExchangeName {
+			t.Error("error at ExchangeName.\nexpected: " + publisherExchangeName + "\ngot:      " + messageBroker.Behaviour[0].(*rabbitmq.Publisher).ExchangeName)
 		}
 
-		if messageBroker.ConsumeData.QueueName != queueName {
-			t.Error("error at QueueName.\nexpected: " + queueName + "\ngot:      " + messageBroker.ConsumeData.QueueName)
+		if messageBroker.Behaviour[0].(*rabbitmq.Publisher).ExchangeType != publisherExchangeType {
+			t.Error("error at ExchangeType.\nexpected: " + publisherExchangeType + "\ngot:      " + messageBroker.Behaviour[0].(*rabbitmq.Publisher).ExchangeType)
 		}
 
-		if messageBroker.ConsumeData.AccessKey != queueAccessKey {
-			t.Error("error at AccessKey.\nexpected: " + queueAccessKey + "\ngot:      " + messageBroker.ConsumeData.AccessKey)
+		if messageBroker.Behaviour[0].(*rabbitmq.Publisher).QueueName != publisherQueueName {
+			t.Error("error at QueueName.\nexpected: " + publisherQueueName + "\ngot:      " + messageBroker.Behaviour[0].(*rabbitmq.Publisher).QueueName)
 		}
 
-		if messageBroker.ConsumeData.Qos != qos {
-			t.Error("error at Qos.\nexpected: " + strconv.Itoa(qos) + "\ngot:      " + strconv.Itoa(messageBroker.ConsumeData.Qos))
+		if messageBroker.Behaviour[0].(*rabbitmq.Publisher).AccessKey != publisherAccessKey {
+			t.Error("error at AccessKey.\nexpected: " + publisherAccessKey + "\ngot:      " + messageBroker.Behaviour[0].(*rabbitmq.Publisher).AccessKey)
 		}
 
-		if messageBroker.ConsumeData.PurgeBeforeStarting != purgeBeforeStarting {
-			t.Error("error at PurgeBeforeStarting.\nexpected: " + strconv.FormatBool(purgeBeforeStarting) + "\ngot:      " + strconv.FormatBool(messageBroker.ConsumeData.PurgeBeforeStarting))
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).BehaviourType != config.RABBITMQ_CONSUMER_BEHAVIOUR {
+			t.Error("error at BehaviourType.\nexpected: " + config.RABBITMQ_CONSUMER_BEHAVIOUR + "\ngot:      " + messageBroker.Behaviour[1].(*rabbitmq.Consumer).BehaviourType)
 		}
 
-		if messageBroker.ConsumeData.OutgoingDeliveryChannel != outgoingDeliveryChannel {
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).ExchangeName != consumerExchangeName {
+			t.Error("error at ExchangeName.\nexpected: " + consumerExchangeName + "\ngot:      " + messageBroker.Behaviour[1].(*rabbitmq.Publisher).ExchangeName)
+		}
+
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).ExchangeType != consumerExchangeType {
+			t.Error("error at ExchangeType.\nexpected: " + consumerExchangeType + "\ngot:      " + messageBroker.Behaviour[1].(*rabbitmq.Consumer).ExchangeType)
+		}
+
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).QueueName != consumerQueueName {
+			t.Error("error at QueueName.\nexpected: " + consumerQueueName + "\ngot:      " + messageBroker.Behaviour[1].(*rabbitmq.Consumer).QueueName)
+		}
+
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).AccessKey != consumerAccessKey {
+			t.Error("error at AccessKey.\nexpected: " + consumerAccessKey + "\ngot:      " + messageBroker.Behaviour[1].(*rabbitmq.Consumer).AccessKey)
+		}
+
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).Qos != qos {
+			t.Error("error at Qos.\nexpected: " + strconv.Itoa(qos) + "\ngot:      " + strconv.Itoa(messageBroker.Behaviour[1].(*rabbitmq.Consumer).Qos))
+		}
+
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).PurgeBeforeStarting != purgeBeforeStarting {
+			t.Error("error at PurgeBeforeStarting.\nexpected: " + strconv.FormatBool(purgeBeforeStarting) + "\ngot:      " + strconv.FormatBool(messageBroker.Behaviour[1].(*rabbitmq.Consumer).PurgeBeforeStarting))
+		}
+
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).OutgoingDeliveryChannel != outgoingDeliveryChannel {
 			t.Error("error at OutgoingDeliveryChannel. Unexpected pointer.")
 		}
 
-		if messageBroker.ConsumeData.UnacknowledgedDeliveryMap == nil {
-			t.Error("error at UnacknowledgedDeliveryMap. Should be a valid map")
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).UnacknowledgedDeliveryMap != unacknowledgedDeliveryMap {
+			t.Error("error at UnacknowledgedDeliveryMap. unexpected pointer")
 		}
 
-		if messageBroker.PublishData == nil {
-			t.Error("error at PublishData. Should not be a nil pointer, since PopulateConsume populate PublishData with failure queue information")
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).FailedMessagePublisher.ExchangeName != expectedFailedMessagesPublisherExchangeName {
+			t.Error("error at AccessKey.\nexpected: " + expectedFailedMessagesPublisherExchangeName + "\ngot:      " + messageBroker.Behaviour[1].(*rabbitmq.Consumer).FailedMessagePublisher.ExchangeName)
 		}
 
-		if messageBroker.PublishData.ExchangeName != expectedFailedMessagesExchangeName {
-			t.Error("error at AccessKey.\nexpected: " + expectedFailedMessagesExchangeName + "\ngot:      " + messageBroker.PublishData.ExchangeName)
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).FailedMessagePublisher.ExchangeType != expectedFailedMessagesPublisherExchangetype {
+			t.Error("error at AccessKey.\nexpected: " + expectedFailedMessagesPublisherExchangetype + "\ngot:      " + messageBroker.Behaviour[1].(*rabbitmq.Consumer).FailedMessagePublisher.ExchangeType)
 		}
 
-		if messageBroker.PublishData.ExchangeType != expectedFailedMessagesExchangetype {
-			t.Error("error at AccessKey.\nexpected: " + expectedFailedMessagesExchangetype + "\ngot:      " + messageBroker.PublishData.ExchangeType)
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).FailedMessagePublisher.QueueName != expectedFailedMessagesPublisherQueueName {
+			t.Error("error at AccessKey.\nexpected: " + expectedFailedMessagesPublisherQueueName + "\ngot:      " + messageBroker.Behaviour[1].(*rabbitmq.Consumer).FailedMessagePublisher.QueueName)
 		}
 
-		if messageBroker.PublishData.QueueName != expectedFailedMessagesQueueName {
-			t.Error("error at AccessKey.\nexpected: " + expectedFailedMessagesQueueName + "\ngot:      " + messageBroker.PublishData.QueueName)
-		}
-
-		if messageBroker.PublishData.AccessKey != expectedFailedMessagesAccessKey {
-			t.Error("error at AccessKey.\nexpected: " + expectedFailedMessagesAccessKey + "\ngot:      " + messageBroker.PublishData.AccessKey)
-		}
-
-		if messageBroker.Connection == nil {
-			t.Error("error at Connection. Should not be a valid pointer")
+		if messageBroker.Behaviour[1].(*rabbitmq.Consumer).FailedMessagePublisher.AccessKey != expectedFailedMessagesPublisherAccessKey {
+			t.Error("error at AccessKey.\nexpected: " + expectedFailedMessagesPublisherAccessKey + "\ngot:      " + messageBroker.Behaviour[1].(*rabbitmq.Consumer).FailedMessagePublisher.AccessKey)
 		}
 	}
 
-	log.Printf("finished TestPopulateConsumeRabbitMQ\n\n")
+	log.Printf("finished TestPopulateRabbitMQ\n\n\n")
 }
 
-func TestGetPopulatedDataFrom(t *testing.T) {
-	log.Println("starting TestGetPopulatedDataFrom")
+func TestGetPopulatedDataFromRabbitMQ(t *testing.T) {
+	log.Printf("starting TestGetPopulatedDataFromRabbitMQ\n")
 
-	publishExchangeName := "publishExchange"
-	publishExchangeType := "publishType"
-	publishQueueName := "publishQueue"
-	publishQueueAccessKey := "publishAccess"
+	publisherExchangeName := "publisher_exchange"
+	publisherExchangeType := "publisher_type"
+	publisherQueueName := "publisher_queue"
+	publisherAccessKey := "publisher_access"
 
-	consumerExchangeName := "consumerExchange"
-	consumerExchangeType := "consumerType"
-	consumerQueueName := "consumerQueue"
-	consumerQueueAccessKey := "consumerAccess"
+	consumerExchangeName := "consumer_exchange"
+	consumerExchangeType := "consumer_type"
+	consumerQueueName := "consumer_queue"
+	consumerAccessKey := "consumer_access"
 	qos := 2
 	purgeBeforeStarting := true
 	outgoingDeliveryChannel := make(chan interface{})
+	unacknowledgedDeliveryMap := &sync.Map{}
 
-	expectedFailedMessagesExchangeName := "failed"
-	expectedFailedMessagesExchangetype := "direct"
-	expectedFailedMessagesQueueName := "_" + consumerExchangeName + "__failed_messages"
-	expectedFailedMessagesAccessKey := expectedFailedMessagesQueueName
+	expectedFailedMessagesPublisherExchangeName := "failed"
+	expectedFailedMessagesPublisherExchangetype := "direct"
+	expectedFailedMessagesPublisherQueueName := "_" + consumerExchangeName + "__failed_messages"
+	expectedFailedMessagesPublisherAccessKey := expectedFailedMessagesPublisherQueueName
 
-	baseMessageBroker := rabbitmq.NewRabbitMQ().PopulatePublish(publishExchangeName, publishExchangeType, publishQueueName, publishQueueAccessKey)
-	messageBroker := rabbitmq.NewRabbitMQ().GetPopulatedDataFrom(baseMessageBroker)
+	publisherBehaviourDto := dto.NewBehaviourDto().FillPublisherData(publisherExchangeName, publisherExchangeType, publisherQueueName, publisherAccessKey)
+	consumerBehaviourDto := dto.NewBehaviourDto().FillConsumerData(consumerExchangeName, consumerExchangeType, consumerQueueName, consumerAccessKey, qos, purgeBeforeStarting, outgoingDeliveryChannel, unacknowledgedDeliveryMap)
 
-	{
-		if messageBroker.PublishData.ExchangeName != publishExchangeName {
-			t.Error("error at ExchangeName.\nexpected: " + publishExchangeName + "\ngot:      " + messageBroker.PublishData.ExchangeName)
-		}
+	messageBroker := rabbitmq.NewRabbitMQ().
+		AddBehaviour(rabbitmq.NewPublisher()).
+		AddBehaviour(rabbitmq.NewConsumer()).
+		AddBehaviour(rabbitmq.NewPublisher()).
+		AddBehaviour(rabbitmq.NewConsumer())
 
-		if messageBroker.PublishData.ExchangeType != publishExchangeType {
-			t.Error("error at ExchangeType.\nexpected: " + publishExchangeType + "\ngot:      " + messageBroker.PublishData.ExchangeType)
-		}
+	messageBroker.Behaviour[0].Populate(publisherBehaviourDto)
+	messageBroker.Behaviour[1].Populate(consumerBehaviourDto)
 
-		if messageBroker.PublishData.QueueName != publishQueueName {
-			t.Error("error at QueueName.\nexpected: " + publishQueueName + "\ngot:      " + messageBroker.PublishData.QueueName)
-		}
-
-		if messageBroker.PublishData.AccessKey != publishQueueAccessKey {
-			t.Error("error at AccessKey.\nexpected: " + publishQueueAccessKey + "\ngot:      " + messageBroker.PublishData.AccessKey)
-		}
-
-		if messageBroker.Connection == nil {
-			t.Error("error at Connection. Should be a valid pointer")
-		}
-
-		if messageBroker.ConsumeData != nil {
-			t.Error("error at ConsumeDat. Should be a nil pointer since Populate Publish don't touch ConsumeData")
-		}
-	}
-
-	baseMessageBroker = rabbitmq.NewRabbitMQ().PopulateConsume(consumerExchangeName, consumerExchangeType, consumerQueueName, consumerQueueAccessKey, qos, purgeBeforeStarting, outgoingDeliveryChannel)
-	messageBroker = rabbitmq.NewRabbitMQ().GetPopulatedDataFrom(baseMessageBroker)
+	messageBroker.Behaviour[2].GetPopulatedDataFrom(messageBroker.Behaviour[0])
+	messageBroker.Behaviour[3].GetPopulatedDataFrom(messageBroker.Behaviour[1])
 
 	{
-		if messageBroker.ConsumeData.ExchangeName != consumerExchangeName {
-			t.Error("error at ExchangeName.\nexpected: " + consumerExchangeName + "\ngot:      " + messageBroker.ConsumeData.ExchangeName)
+		if messageBroker.Behaviour[2].(*rabbitmq.Publisher).BehaviourType != config.RABBITMQ_PUBLISHER_BEHAVIOUR {
+			t.Error("error at BehaviourType.\nexpected: " + config.RABBITMQ_PUBLISHER_BEHAVIOUR + "\ngot:      " + messageBroker.Behaviour[2].(*rabbitmq.Publisher).BehaviourType)
 		}
 
-		if messageBroker.ConsumeData.ExchangeType != consumerExchangeType {
-			t.Error("error at ExchangeType.\nexpected: " + consumerExchangeType + "\ngot:      " + messageBroker.ConsumeData.ExchangeType)
+		if messageBroker.Behaviour[2].(*rabbitmq.Publisher).ExchangeName != publisherExchangeName {
+			t.Error("error at ExchangeName.\nexpected: " + publisherExchangeName + "\ngot:      " + messageBroker.Behaviour[2].(*rabbitmq.Publisher).ExchangeName)
 		}
 
-		if messageBroker.ConsumeData.QueueName != consumerQueueName {
-			t.Error("error at QueueName.\nexpected: " + consumerQueueName + "\ngot:      " + messageBroker.ConsumeData.QueueName)
+		if messageBroker.Behaviour[2].(*rabbitmq.Publisher).ExchangeType != publisherExchangeType {
+			t.Error("error at ExchangeType.\nexpected: " + publisherExchangeType + "\ngot:      " + messageBroker.Behaviour[2].(*rabbitmq.Publisher).ExchangeType)
 		}
 
-		if messageBroker.ConsumeData.AccessKey != consumerQueueAccessKey {
-			t.Error("error at AccessKey.\nexpected: " + consumerQueueAccessKey + "\ngot:      " + messageBroker.ConsumeData.AccessKey)
+		if messageBroker.Behaviour[2].(*rabbitmq.Publisher).QueueName != publisherQueueName {
+			t.Error("error at QueueName.\nexpected: " + publisherQueueName + "\ngot:      " + messageBroker.Behaviour[2].(*rabbitmq.Publisher).QueueName)
 		}
 
-		if messageBroker.ConsumeData.Qos != qos {
-			t.Error("error at Qos.\nexpected: " + strconv.Itoa(qos) + "\ngot:      " + strconv.Itoa(messageBroker.ConsumeData.Qos))
+		if messageBroker.Behaviour[2].(*rabbitmq.Publisher).AccessKey != publisherAccessKey {
+			t.Error("error at AccessKey.\nexpected: " + publisherAccessKey + "\ngot:      " + messageBroker.Behaviour[2].(*rabbitmq.Publisher).AccessKey)
 		}
 
-		if messageBroker.ConsumeData.PurgeBeforeStarting != purgeBeforeStarting {
-			t.Error("error at PurgeBeforeStarting.\nexpected: " + strconv.FormatBool(purgeBeforeStarting) + "\ngot:      " + strconv.FormatBool(messageBroker.ConsumeData.PurgeBeforeStarting))
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).BehaviourType != config.RABBITMQ_CONSUMER_BEHAVIOUR {
+			t.Error("error at BehaviourType.\nexpected: " + config.RABBITMQ_CONSUMER_BEHAVIOUR + "\ngot:      " + messageBroker.Behaviour[3].(*rabbitmq.Consumer).BehaviourType)
 		}
 
-		if messageBroker.ConsumeData.OutgoingDeliveryChannel != outgoingDeliveryChannel {
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).ExchangeName != consumerExchangeName {
+			t.Error("error at ExchangeName.\nexpected: " + consumerExchangeName + "\ngot:      " + messageBroker.Behaviour[3].(*rabbitmq.Consumer).ExchangeName)
+		}
+
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).ExchangeType != consumerExchangeType {
+			t.Error("error at ExchangeType.\nexpected: " + consumerExchangeType + "\ngot:      " + messageBroker.Behaviour[3].(*rabbitmq.Consumer).ExchangeType)
+		}
+
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).QueueName != consumerQueueName {
+			t.Error("error at QueueName.\nexpected: " + consumerQueueName + "\ngot:      " + messageBroker.Behaviour[3].(*rabbitmq.Consumer).QueueName)
+		}
+
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).AccessKey != consumerAccessKey {
+			t.Error("error at AccessKey.\nexpected: " + consumerAccessKey + "\ngot:      " + messageBroker.Behaviour[3].(*rabbitmq.Consumer).AccessKey)
+		}
+
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).Qos != qos {
+			t.Error("error at Qos.\nexpected: " + strconv.Itoa(qos) + "\ngot:      " + strconv.Itoa(messageBroker.Behaviour[3].(*rabbitmq.Consumer).Qos))
+		}
+
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).PurgeBeforeStarting != purgeBeforeStarting {
+			t.Error("error at PurgeBeforeStarting.\nexpected: " + strconv.FormatBool(purgeBeforeStarting) + "\ngot:      " + strconv.FormatBool(messageBroker.Behaviour[3].(*rabbitmq.Consumer).PurgeBeforeStarting))
+		}
+
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).OutgoingDeliveryChannel != outgoingDeliveryChannel {
 			t.Error("error at OutgoingDeliveryChannel. Unexpected pointer.")
 		}
 
-		if messageBroker.ConsumeData.UnacknowledgedDeliveryMap != baseMessageBroker.ConsumeData.UnacknowledgedDeliveryMap {
-			t.Error("error at UnacknowledgedDeliveryMap. Should be the same map")
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).UnacknowledgedDeliveryMap != unacknowledgedDeliveryMap {
+			t.Error("error at UnacknowledgedDeliveryMap. Unexpected pointer")
 		}
 
-		if messageBroker.Connection == nil {
-			t.Error("error at Connection. Should be a valid pointer")
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).FailedMessagePublisher.ExchangeName != expectedFailedMessagesPublisherExchangeName {
+			t.Error("error at ExchangeName.\nexpected: " + expectedFailedMessagesPublisherExchangeName + "\ngot:      " + messageBroker.Behaviour[3].(*rabbitmq.Consumer).FailedMessagePublisher.ExchangeName)
 		}
 
-		if messageBroker.PublishData.ExchangeName != expectedFailedMessagesExchangeName {
-			t.Error("error at ExchangeName.\nexpected: " + expectedFailedMessagesExchangeName + "\ngot:      " + messageBroker.PublishData.ExchangeName)
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).FailedMessagePublisher.ExchangeType != expectedFailedMessagesPublisherExchangetype {
+			t.Error("error at ExchangeType.\nexpected: " + expectedFailedMessagesPublisherExchangetype + "\ngot:      " + messageBroker.Behaviour[3].(*rabbitmq.Consumer).FailedMessagePublisher.ExchangeType)
 		}
 
-		if messageBroker.PublishData.ExchangeType != expectedFailedMessagesExchangetype {
-			t.Error("error at ExchangeType.\nexpected: " + expectedFailedMessagesExchangetype + "\ngot:      " + messageBroker.PublishData.ExchangeType)
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).FailedMessagePublisher.QueueName != expectedFailedMessagesPublisherQueueName {
+			t.Error("error at QueueName.\nexpected: " + expectedFailedMessagesPublisherQueueName + "\ngot:      " + messageBroker.Behaviour[3].(*rabbitmq.Consumer).FailedMessagePublisher.QueueName)
 		}
 
-		if messageBroker.PublishData.QueueName != expectedFailedMessagesQueueName {
-			t.Error("error at QueueName.\nexpected: " + expectedFailedMessagesQueueName + "\ngot:      " + messageBroker.PublishData.QueueName)
-		}
-
-		if messageBroker.PublishData.AccessKey != expectedFailedMessagesAccessKey {
-			t.Error("error at AccessKey.\nexpected: " + expectedFailedMessagesAccessKey + "\ngot:      " + messageBroker.PublishData.AccessKey)
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).FailedMessagePublisher.AccessKey != expectedFailedMessagesPublisherAccessKey {
+			t.Error("error at AccessKey.\nexpected: " + expectedFailedMessagesPublisherAccessKey + "\ngot:      " + messageBroker.Behaviour[3].(*rabbitmq.Consumer).FailedMessagePublisher.AccessKey)
 		}
 	}
 
-	log.Printf("finished TestGetPopulatedDataFrom\n\n")
+	log.Printf("finished TestGetPopulatedDataFromRabbitMQ\n\n\n")
 }
 
-func TestSharesConnectionWith(t *testing.T) {
-	log.Println("starting TestSharesConnectionWith")
+func TestSharesConnectionWithRabbitMQ(t *testing.T) {
+	log.Printf("starting TestSharesConnectionWithRabbitMQ\n")
 
-	baseMessageBroker := rabbitmq.NewRabbitMQ().Connect()
-	defer baseMessageBroker.CloseConnection()
+	messageBroker := rabbitmq.NewRabbitMQ().
+		AddBehaviour(rabbitmq.NewPublisher()).
+		AddBehaviour(rabbitmq.NewConsumer()).
+		AddBehaviour(rabbitmq.NewPublisher()).
+		AddBehaviour(rabbitmq.NewConsumer())
 
-	messageBroker := rabbitmq.NewRabbitMQ().SharesConnectionWith(baseMessageBroker)
+	messageBroker.Behaviour[2].SharesConnectionWith(messageBroker.Behaviour[0])
+	messageBroker.Behaviour[3].SharesConnectionWith(messageBroker.Behaviour[1])
 
 	{
-		if messageBroker.Connection != baseMessageBroker.Connection {
-			t.Error("error at Connection, both pointers should be the same")
+		if messageBroker.Behaviour[2].(*rabbitmq.Publisher).Channel == messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel {
+			t.Error("error at publisher Channel, should be different pointers")
+		}
+
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).Channel == messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel {
+			t.Error("error at consumer Channel, should be different pointers")
+		}
+
+		if messageBroker.Behaviour[2].(*rabbitmq.Publisher).Channel.Connection != messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Connection {
+			t.Error("error at publisher Connection, should be same pointers")
+		}
+
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).Channel.Connection != messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.Connection {
+			t.Error("error at consumer ChanConnectionnel, should be same pointers")
 		}
 	}
 
-	log.Printf("finished TestSharesConnectionWith\n\n")
+	log.Printf("finished TestSharesConnectionWithRabbitMQ\n\n\n")
 }
 
-func TestSetPublishChannel(t *testing.T) {
-	log.Println("starting TestSetPublishChannel")
+func TestSharesChannelRabbitMQ(t *testing.T) {
+	log.Printf("starting TestSharesChannelRabbitMQ\n")
 
-	baseMessageBroker := rabbitmq.NewRabbitMQ().PopulatePublish("", "", "", "")
+	messageBroker := rabbitmq.NewRabbitMQ().
+		AddBehaviour(rabbitmq.NewPublisher()).
+		AddBehaviour(rabbitmq.NewConsumer()).
+		AddBehaviour(rabbitmq.NewPublisher()).
+		AddBehaviour(rabbitmq.NewConsumer())
 
-	messageBroker := rabbitmq.NewRabbitMQ().PopulatePublish("", "", "", "").SetPublishChannel(baseMessageBroker.PublishData.Channel)
+	messageBroker.Behaviour[2].SharesChannelWith(messageBroker.Behaviour[0])
+	messageBroker.Behaviour[3].SharesChannelWith(messageBroker.Behaviour[1])
 
 	{
-		if messageBroker.Connection != baseMessageBroker.Connection {
-			t.Error("error at Connection, both pointers should be the same")
+		if messageBroker.Behaviour[2].(*rabbitmq.Publisher).Channel != messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel {
+			t.Error("error at publisher Channel, should be same pointers")
 		}
 
-		if messageBroker.PublishData.Channel != baseMessageBroker.PublishData.Channel {
-			t.Error("error at Channel, both pointers should be the same")
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).Channel != messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel {
+			t.Error("error at consumer Channel, should be same pointers")
+		}
+
+		if messageBroker.Behaviour[2].(*rabbitmq.Publisher).Channel.Connection != messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Connection {
+			t.Error("error at publisher Connection, should be same pointers")
+		}
+
+		if messageBroker.Behaviour[3].(*rabbitmq.Consumer).Channel.Connection != messageBroker.Behaviour[1].(*rabbitmq.Consumer).Channel.Connection {
+			t.Error("error at consumer ChanConnectionnel, should be same pointers")
 		}
 	}
 
-	log.Printf("finishing TestSetPublishChannel\n\n")
-}
+	messageBroker.Behaviour[1].(*rabbitmq.Consumer).FailedMessagePublisher.CloseConnection()
+	messageBroker.Behaviour[1].(*rabbitmq.Consumer).FailedMessagePublisher.CloseChannel()
 
-func TestSetConsumeChannel(t *testing.T) {
-	log.Println("starting TestSetConsumeChannel")
-
-	baseMessageBroker := rabbitmq.NewRabbitMQ().PopulateConsume("", "", "", "", 0, false, nil)
-
-	messageBroker := rabbitmq.NewRabbitMQ().PopulateConsume("", "", "", "", 0, false, nil).SetConsumeChannel(baseMessageBroker.ConsumeData.Channel)
-
-	{
-		if messageBroker.Connection != baseMessageBroker.Connection {
-			t.Error("error at Connection, both pointers should be the same")
-		}
-
-		if messageBroker.ConsumeData.Channel != baseMessageBroker.ConsumeData.Channel {
-			t.Error("error at Channel, both pointers should be the same")
-		}
-	}
-
-	log.Printf("finishing TestSetConsumeChannel\n\n")
+	log.Printf("finishing TestSharesChannelRabbitMQ\n\n\n")
 }
 
 func TestPublishRabbitMQ(t *testing.T) {
@@ -309,30 +504,27 @@ func TestPublishRabbitMQ(t *testing.T) {
 	queueName := exchangeName + "__Publish()"
 	accessKey := queueName
 
-	messageBrokerPublisher := rabbitmq.NewRabbitMQ().Connect().PopulatePublish(exchangeName, exchangeType, queueName, accessKey)
-	defer messageBrokerPublisher.CloseConnection()
+	messageBroker := rabbitmq.NewRabbitMQ().
+		AddBehaviour(rabbitmq.NewPublisher())
 
-	messageBrokerPublisher.PublishData.Channel.CreateChannel(messageBrokerPublisher.Connection)
-	defer messageBrokerPublisher.PublishData.Channel.CloseChannel()
+	messageBroker.Behaviour[0].CreateChannel()
 
-	messageBrokerPublisher.PreparePublishQueue()
+	publishBehaviourDto := dto.NewBehaviourDto().FillPublisherData(exchangeName, exchangeType, queueName, accessKey)
+	messageBroker.Behaviour[0].Populate(publishBehaviourDto)
 
-	err = messageBrokerPublisher.Publish("creting queue", "", "")
-	if err != nil {
-		t.Error("error publishing to queue: " + err.Error())
-	}
+	messageBroker.Behaviour[0].(*rabbitmq.Publisher).PreparePublishQueue()
 
-	_, err = messageBrokerPublisher.PublishData.Channel.Channel.QueuePurge(queueName, true)
+	_, err = messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Channel.QueuePurge(queueName, true)
 	if err != nil {
 		t.Error("error purging the queue: " + err.Error())
 	}
 
-	err = messageBrokerPublisher.Publish(expectedMessage, "", "")
+	err = messageBroker.Behaviour[0].(*rabbitmq.Publisher).Publish(expectedMessage, "", "")
 	if err != nil {
 		t.Error("error publishing to queue: " + err.Error())
 	}
 
-	recievedMessage, _, err := messageBrokerPublisher.PublishData.Channel.Channel.Get(queueName, true)
+	recievedMessage, _, err := messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Channel.Get(queueName, true)
 	if err != nil {
 		t.Error("error consuming message: " + err.Error())
 	}
@@ -343,12 +535,14 @@ func TestPublishRabbitMQ(t *testing.T) {
 		}
 	}
 
-	err = rabbitmq.DeleteQueueAndExchange(messageBrokerPublisher.PublishData.Channel.Channel, queueName, exchangeName, "doit")
+	err = rabbitmq.DeleteQueueAndExchange(messageBroker.Behaviour[0].(*rabbitmq.Publisher).Channel.Channel, queueName, exchangeName, "doit")
 	if err != nil {
 		t.Error("error deleting queue: " + err.Error())
 	}
 
-	log.Printf("finishing TestPublishRabbitMQ\n\n")
+	messageBroker.Behaviour[0].CloseConnection()
+
+	log.Printf("finishing TestPublishRabbitMQ\n\n\n")
 }
 
 func TestConsumeForeverRabbitMQ(t *testing.T) {
@@ -364,19 +558,21 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 	qos := 0
 	purgeBeforeStarting := true
 	queueConsumeChannel := make(chan interface{})
+	unacknowledgedDeliveryMap := &sync.Map{}
 
-	messageBrokerConsumer := rabbitmq.NewRabbitMQ().Connect().PopulateConsume(exchangeName, exchangeType, queueName, accessKey, qos, purgeBeforeStarting, queueConsumeChannel)
-	defer messageBrokerConsumer.CloseConnection()
+	messageBroker := rabbitmq.NewRabbitMQ().
+		AddBehaviour(rabbitmq.NewConsumer())
 
-	messageBrokerConsumer.ConsumeData.Channel.CreateChannel(messageBrokerConsumer.Connection)
-	defer messageBrokerConsumer.PublishData.Channel.CloseChannel()
+	messageBroker.Behaviour[0].CreateChannel()
 
-	go messageBrokerConsumer.ConsumeForever()
+	behaviourDto := dto.NewBehaviourDto().FillConsumerData(exchangeName, exchangeType, queueName, accessKey, qos, purgeBeforeStarting, queueConsumeChannel, unacknowledgedDeliveryMap)
+	messageBroker.Behaviour[0].Populate(behaviourDto)
 
+	go messageBroker.ConsumeForever()
 	time.Sleep(time.Second)
 
 	for _, expectedMessage := range messages {
-		confirmation, err := messageBrokerConsumer.ConsumeData.Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, accessKey, true, false, amqp.Publishing{Body: []byte(expectedMessage)})
+		confirmation, err := messageBroker.Behaviour[0].(*rabbitmq.Consumer).Channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, accessKey, true, false, amqp.Publishing{Body: []byte(expectedMessage)})
 		if err != nil {
 			t.Error("error publishing message to RabbitMQ: " + err.Error())
 		}
@@ -387,7 +583,6 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 		}
 
 		recievedMessage := <-queueConsumeChannel
-
 		transmissionData := string(recievedMessage.(*messagebroker.MessageBrokerConsumedMessage).MessageData.([]byte))
 
 		{
@@ -396,63 +591,23 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 			}
 		}
 
-		err = messageBrokerConsumer.Acknowledge(true, "success", recievedMessage.(*messagebroker.MessageBrokerConsumedMessage).MessageId, "")
+		err = messageBroker.Acknowledge(true, "success", recievedMessage.(*messagebroker.MessageBrokerConsumedMessage).MessageId, "")
 		if err != nil {
 			t.Error("error with acknowlege: " + err.Error())
 		}
 	}
 
-	err := rabbitmq.DeleteQueueAndExchange(messageBrokerConsumer.ConsumeData.Channel.Channel, queueName, exchangeName, "doit")
+	err := rabbitmq.DeleteQueueAndExchange(messageBroker.Behaviour[0].(*rabbitmq.Consumer).Channel.Channel, queueName, exchangeName, "doit")
 	if err != nil {
 		t.Error("error deleting queue " + queueName + ": " + err.Error())
 	}
 
-	err = rabbitmq.DeleteQueueAndExchange(messageBrokerConsumer.PublishData.Channel.Channel, queueName, exchangeName, "doit")
+	err = rabbitmq.DeleteQueueAndExchange(messageBroker.Behaviour[0].(*rabbitmq.Consumer).Channel.Channel, queueName, exchangeName, "doit")
 	if err != nil {
 		t.Error("error deleting queue " + queueName + ": " + err.Error())
 	}
 
-	log.Printf("finishing TestConsumeForeverRabbitMQ\n\n")
-}
+	messageBroker.Behaviour[0].CloseConnection()
 
-func TestPersistDataRabbitMQ(t *testing.T) {
-	log.Println("starting TestPersistDataRabbitMQ")
-
-	expectedMessage := "teste"
-
-	exchangeName := "tests"
-	exchangeType := "direct"
-	queueName := exchangeName + "__PersistData()"
-	accessKey := queueName
-
-	messageBrokerPublisher := rabbitmq.NewRabbitMQ().Connect().PopulatePublish(exchangeName, exchangeType, queueName, accessKey)
-	defer messageBrokerPublisher.CloseConnection()
-
-	messageBrokerPublisher.PublishData.Channel.CreateChannel(messageBrokerPublisher.Connection)
-	defer messageBrokerPublisher.PublishData.Channel.CloseChannel()
-
-	messageBrokerPublisher.PreparePublishQueue()
-
-	err := messageBrokerPublisher.PersistData(expectedMessage, "", "")
-	if err != nil {
-		t.Error("error persisting data: " + err.Error())
-	}
-
-	delivery, _, err := messageBrokerPublisher.PublishData.Channel.Channel.Get(queueName, true)
-	if err != nil {
-		t.Error("error consuming message: " + err.Error())
-	}
-
-	{
-		if string(delivery.Body) != expectedMessage {
-			t.Error("error persisting data.\nexpected: " + expectedMessage + "\ngot:      " + string(delivery.Body))
-		}
-	}
-
-	err = rabbitmq.DeleteQueueAndExchange(messageBrokerPublisher.PublishData.Channel.Channel, queueName, exchangeName, "doit")
-	if err != nil {
-		t.Error("error deleting queue and exchange: " + err.Error())
-	}
-
-	log.Printf("finishing TestPersistDataRabbitMQ\n\n")
+	log.Printf("finishing TestConsumeForeverRabbitMQ\n\n\n")
 }

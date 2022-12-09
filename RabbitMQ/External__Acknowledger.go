@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -23,11 +25,20 @@ comment is a commentary that can be anexed to the object as a sinalizer of error
 func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, optionalRoute string) (err error) {
 	errorFileIdentification := "RabbitMQ.go at Acknowledge()"
 
-	mapObject, found := r.ConsumeData.UnacknowledgedDeliveryMap.Load(messageId)
-	if !found {
-		return errors.New("in " + errorFileIdentification + " failed loading message id " + messageId + " from map")
+	splittedMessageId := strings.Split(messageId, "@")
+	id := splittedMessageId[0]
+	behaviourPosition, err := strconv.Atoi(splittedMessageId[1])
+	if err != nil {
+		log.Panic("in " + errorFileIdentification + " splitting message id '" + messageId + "'")
 	}
-	r.ConsumeData.UnacknowledgedDeliveryMap.Delete(messageId)
+
+	consumer := r.Behaviour[behaviourPosition].(*Consumer)
+
+	mapObject, found := consumer.UnacknowledgedDeliveryMap.Load(id)
+	if !found {
+		return errors.New("in " + errorFileIdentification + " failed loading message id '" + id + "' from map")
+	}
+	consumer.UnacknowledgedDeliveryMap.Delete(messageId)
 
 	switch message := mapObject.(type) {
 	case amqp.Delivery:
@@ -52,7 +63,17 @@ func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, o
 			failureTime := time.Now().Format("2006-01-02 15:04:05Z07:00")
 			failureMessage := `{"filure_time":"` + failureTime + `","error":"` + comment + `","message":"` + string(message.Body) + `"}`
 
-			err := r.Publish(failureMessage, "", "")
+			var splittedOptionalRoute []string
+			if optionalRoute != "" {
+				splittedOptionalRoute = strings.Split(optionalRoute, "@")
+				if len(splittedOptionalRoute) != 2 {
+
+				} else {
+					log.Println("there was a optional route for failed message destiny, but it have come with unexpected format: '" + optionalRoute + "', publishing in standard queue")
+				}
+			}
+
+			err := consumer.FailedMessagePublisher.Publish(failureMessage, splittedOptionalRoute[0], splittedOptionalRoute[1])
 			if err != nil {
 				log.Println("error publishing to failure queue in " + errorFileIdentification + ": " + err.Error())
 			}
