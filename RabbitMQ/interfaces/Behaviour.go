@@ -25,6 +25,8 @@ type Behaviour interface {
 
 	GetChannel() *channel.ChannelData
 
+	CloseChannel()
+
 	/*
 		Will make both objects share the same channel information for assincronus access.
 	*/
