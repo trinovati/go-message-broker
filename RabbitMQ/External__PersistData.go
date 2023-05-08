@@ -1,6 +1,7 @@
 package rabbitmq
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -15,6 +16,7 @@ Implementing interface for Message Handle service.
 func (r *RabbitMQ) PersistData(transformedMessage interface{}, newTarget string, persistFormatFlag string) (err error) {
 	errorFileIdentification := "RabbitMQ at PersistData()"
 
+	var message string
 	targets := strings.Split(newTarget, "@")
 
 	exchange := targets[0]
@@ -23,33 +25,44 @@ func (r *RabbitMQ) PersistData(transformedMessage interface{}, newTarget string,
 		queue = targets[1]
 	}
 
-	for {
-		switch message := transformedMessage.(type) {
-		case string:
+	switch messageTyping := transformedMessage.(type) {
+	case string:
+		message = messageTyping
 
-			isPublisherUnexistent := true
-			for _, behaviour := range r.Behaviour {
-				switch publisher := behaviour.(type) {
-				case *Publisher:
-					isPublisherUnexistent = false
+	case map[string]interface{}:
+		var jsonDestiny []byte
 
-					err := publisher.Publish(message, exchange, queue)
-					if err != nil {
-						log.Println("error publishing in " + errorFileIdentification + ": " + err.Error())
-						continue
-					}
+		jsonDestiny, err = json.Marshal(messageTyping)
+		if err != nil {
+			return errors.New("error unamrshalling json in : " + errorFileIdentification + "" + err.Error())
+		}
 
-					return nil
-				}
+		message = string(jsonDestiny)
+
+	default:
+		completeError := fmt.Sprintf("in %s: message have reached PersistData without implemented '%T' format", errorFileIdentification, transformedMessage)
+		return errors.New(completeError)
+	}
+
+	isPublisherUnexistent := true
+	for _, behaviour := range r.Behaviour {
+		switch publisher := behaviour.(type) {
+		case *Publisher:
+			isPublisherUnexistent = false
+
+			err := publisher.Publish(message, exchange, queue)
+			if err != nil {
+				log.Println("error publishing in " + errorFileIdentification + ": " + err.Error())
+				continue
 			}
 
-			if isPublisherUnexistent {
-				return errors.New("in " + errorFileIdentification + ": no publisher was found")
-			}
-
-		default:
-			completeError := fmt.Sprintf("in %s: message have reached PersistData without implemented '%T' format", errorFileIdentification, transformedMessage)
-			return errors.New(completeError)
+			return nil
 		}
 	}
+
+	if isPublisherUnexistent {
+		return errors.New("in " + errorFileIdentification + ": no publisher was found at RabbitMQ object")
+	}
+
+	return nil
 }
