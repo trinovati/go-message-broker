@@ -1,6 +1,8 @@
 package rabbitmq
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -20,9 +22,9 @@ messageId is the control that the broker use to administrate its messages.
 
 optionalRoute is a string flag, path or destiny that the message broker will redirect the message.
 
-comment is a commentary that can be anexed to the object as a sinalizer of errors or success.
+motive is a commentary that can be anexed to the object as a sinalizer of errors or success.
 */
-func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, optionalRoute string) (err error) {
+func (r *RabbitMQ) Acknowledge(success bool, motive string, messageId string, optionalRoute string) (err error) {
 	errorFileIdentification := "RabbitMQ.go at Acknowledge()"
 
 	splittedMessageId := strings.Split(messageId, "@")
@@ -60,8 +62,16 @@ func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, o
 				return errors.New("error negative acknowlodging message in " + errorFileIdentification + ": " + err.Error())
 			}
 
-			failureTime := time.Now().Format("2006-01-02 15:04:05Z07:00")
-			failureMessage := `{"filure_time":"` + failureTime + `","error":"` + comment + `","message":"` + string(message.Body) + `"}`
+			var failureMap map[string]interface{} = map[string]interface{}{
+				"message":          base64.StdEncoding.EncodeToString(message.Body),
+				"acknowledge_time": time.Now().Format("2006-01-02T15:04:05Z07:00"),
+				"motive":           motive,
+			}
+
+			failureMessage, err := json.Marshal(failureMap)
+			if err != nil {
+				return errors.New("error marshalling failure message in " + errorFileIdentification + ": " + err.Error())
+			}
 
 			var failedNotifyExchangeName string = ""
 			var failedNotifyQueueName string = ""
@@ -76,11 +86,10 @@ func (r *RabbitMQ) Acknowledge(success bool, comment string, messageId string, o
 				}
 			}
 
-			err := consumer.FailedMessagePublisher.Publish(failureMessage, failedNotifyExchangeName, failedNotifyQueueName)
+			err = consumer.FailedMessagePublisher.Publish(string(failureMessage), failedNotifyExchangeName, failedNotifyQueueName)
 			if err != nil {
 				log.Println("error publishing to failure queue in " + errorFileIdentification + ": " + err.Error())
 			}
-
 		}
 
 	default:
