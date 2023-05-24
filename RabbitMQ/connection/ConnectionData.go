@@ -38,10 +38,10 @@ func NewConnectionData() *ConnectionData {
 	connectionContext, cancelContext := context.WithCancel(context.Background())
 
 	protocol := config.RABBITMQ_PROTOCOL
-	user := strings.Split(strings.Split(config.RABBITMQ_SERVER, "@")[0], ":")[0]
-	password := strings.Split(strings.Split(config.RABBITMQ_SERVER, "@")[0], ":")[1]
-	ServerAddress := strings.Split(strings.Split(config.RABBITMQ_SERVER, "@")[1], ":")[0]
-	port := strings.Split(strings.Split(config.RABBITMQ_SERVER, "@")[1], ":")[1]
+	user := config.RABBITMQ_USERNAME
+	password := config.RABBITMQ_PASSWORD
+	ServerAddress := config.RABBITMQ_HOST
+	port := config.RABBITMQ_PORT
 
 	return &ConnectionData{
 		protocol:                   protocol,

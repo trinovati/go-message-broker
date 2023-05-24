@@ -19,7 +19,10 @@ Environmental variable used by RabbitMQ service for connection with server.
 */
 var (
 	RABBITMQ_PROTOCOL = GetEnvOrDefault("RABBITMQ_PROTOCOL", "amqp")
-	RABBITMQ_SERVER   = GetEnvOrDefault("RABBITMQ_SERVER", "guest:guest@localhost:5672")
+	RABBITMQ_HOST     = GetEnvOrDefault("RABBITMQ_HOST", "localhost")
+	RABBITMQ_PORT     = GetEnvOrDefault("RABBITMQ_HOST", "5672")
+	RABBITMQ_USERNAME = GetEnvOrDefault("RABBITMQ_HOST", "guest")
+	RABBITMQ_PASSWORD = GetEnvOrDefault("RABBITMQ_HOST", "guest")
 )
 
 /*
