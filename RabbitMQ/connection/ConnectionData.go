@@ -3,6 +3,7 @@ package rabbitmqconnection
 import (
 	"context"
 	"log"
+	"net/url"
 	"runtime"
 	"strconv"
 	"strings"
@@ -38,10 +39,10 @@ func NewConnectionData() *ConnectionData {
 	connectionContext, cancelContext := context.WithCancel(context.Background())
 
 	protocol := config.RABBITMQ_PROTOCOL
-	user := config.RABBITMQ_USERNAME
-	password := config.RABBITMQ_PASSWORD
-	ServerAddress := config.RABBITMQ_HOST
-	port := config.RABBITMQ_PORT
+	user := url.QueryEscape(config.RABBITMQ_USERNAME)
+	password := url.QueryEscape(config.RABBITMQ_PASSWORD)
+	ServerAddress := url.QueryEscape(config.RABBITMQ_HOST)
+	port := url.QueryEscape(config.RABBITMQ_PORT)
 
 	return &ConnectionData{
 		protocol:                   protocol,
@@ -62,10 +63,10 @@ func NewConnectionData() *ConnectionData {
 func (c *ConnectionData) SetConnectionString(connectionString string) *ConnectionData {
 	c.protocol = config.RABBITMQ_PROTOCOL
 
-	c.user = strings.Split(strings.Split(connectionString, "@")[0], ":")[0]
-	c.password = strings.Split(strings.Split(connectionString, "@")[0], ":")[1]
-	c.ServerAddress = strings.Split(strings.Split(connectionString, "@")[1], ":")[0]
-	c.port = strings.Split(strings.Split(connectionString, "@")[1], ":")[1]
+	c.user = url.QueryEscape(strings.Split(strings.Split(connectionString, "@")[0], ":")[0])
+	c.password = url.QueryEscape(strings.Split(strings.Split(connectionString, "@")[0], ":")[1])
+	c.ServerAddress = url.QueryEscape(strings.Split(strings.Split(connectionString, "@")[1], ":")[0])
+	c.port = url.QueryEscape(strings.Split(strings.Split(connectionString, "@")[1], ":")[1])
 
 	return c
 }
