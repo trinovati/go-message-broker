@@ -1,6 +1,6 @@
 package rabbitmq
 
-import "gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/config"
+import "gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/config"
 
 func (rmq *RabbitMQ) GetDeliveryChannel() (gobMessageChannel chan []byte, err error) {
 	if rmq.Consumer == nil {

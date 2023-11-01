@@ -3,9 +3,9 @@ package rabbitmq
 import (
 	"fmt"
 
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/config"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/errors"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/interfaces"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/config"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/errors"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/interfaces"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )

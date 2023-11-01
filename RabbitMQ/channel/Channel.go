@@ -7,9 +7,9 @@ import (
 	"runtime"
 	"time"
 
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/config"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/connection"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/interfaces"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/config"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/connection"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/interfaces"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )

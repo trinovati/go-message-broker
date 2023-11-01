@@ -1,8 +1,8 @@
 package config
 
 import (
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/errors"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/interfaces"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/errors"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/interfaces"
 )
 
 /*

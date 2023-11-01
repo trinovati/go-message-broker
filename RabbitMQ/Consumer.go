@@ -5,10 +5,10 @@ import (
 	"encoding/gob"
 	"sync"
 
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/channel"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/config"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/interfaces"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/dto"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/channel"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/config"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/interfaces"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/dto"
 )
 
 /*
