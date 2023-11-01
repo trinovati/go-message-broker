@@ -1,70 +1,154 @@
 package rabbitmq
 
 import (
-	"errors"
+	"fmt"
+
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/config"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/errors"
+	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/interfaces"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/config"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/RabbitMQ/interfaces"
 )
 
 /*
 Object containing methods to prepare a consumer or publisher to RabbitMQ service, operating as client, RPC client or RPC server.
 */
 type RabbitMQ struct {
-	service           string
-	Behaviour         []interfaces.Behaviour
-	BehaviourTypeMap  map[int]string
-	BehaviourQuantity int
+	Publisher interfaces.Publisher
+	Consumer  interfaces.Consumer
 }
 
 /*
-Build an object containing methods to prepare a consumer or publisher to RabbitMQ service.
+Build an object containing methods to prepare a Consumer or Publisher to RabbitMQ service.
 
-terminateOnConnectionError defines if, at any moment, the connections fail or comes down, the service will panic or retry connection.
-
-By default, the object will try to access the environmental variable RABBITMQ_SERVER for connection purpose, in case of unexistent, it will use 'amqp://guest:guest@localhost:5672/' address.
-
-By default, the object will try to access the environmental variable RABBITMQ_SERVICE for behaviour purpose, in case of unexistent, it will use 'client' behaviour.
+Its highly recomended a single object per server, as Consumer behaviour uses the Publisher to report any problem to the server.
 */
 func NewRabbitMQ() *RabbitMQ {
 	return &RabbitMQ{
-		service:           config.RABBITMQ_CLIENT,
-		Behaviour:         nil,
-		BehaviourTypeMap:  make(map[int]string),
-		BehaviourQuantity: 0,
+		Publisher: nil,
+		Consumer:  nil,
 	}
 }
 
-func (r *RabbitMQ) AddBehaviour(behaviour interfaces.Behaviour) *RabbitMQ {
-	r.Behaviour = append(r.Behaviour, behaviour)
+/*
+Populate the adequate RabbitMQ behaviour with the argument.
 
-	r.BehaviourTypeMap[len(r.Behaviour)-1] = behaviour.GetBehaviourType()
+Keep in mind that the Consumer behaviour will use the Publisher object to send any report to the server.
+*/
+func (rmq *RabbitMQ) Behave(behaviour interfaces.Behaviour) *RabbitMQ {
+	var ok bool
 
-	r.BehaviourQuantity++
+	switch behaviour.Behaviour() {
+	case config.PUBLISHER:
+		rmq.Publisher, ok = behaviour.(interfaces.Publisher)
+		if !ok {
+			config.Error.New(fmt.Sprintf("type %T cannot be parsed into Publisher", behaviour)).Print()
+			return rmq
+		}
 
-	return r
+	case config.CONSUMER:
+		rmq.Consumer, ok = behaviour.(interfaces.Consumer)
+		if !ok {
+			config.Error.New(fmt.Sprintf("type %T cannot be parsed into Publisher", behaviour)).Print()
+			return rmq
+		}
+
+		if rmq.Publisher == nil {
+			rmq.Behave(
+				NewPublisher(
+					"",
+					"",
+					"",
+					"",
+				),
+			)
+		}
+
+		rmq.Consumer.SetPublisher(rmq.Publisher)
+	}
+
+	return rmq
 }
 
 /*
-Delete a queue and a exchange, thinked to use at tests.
+Change the address that the object will try to connect.
 
+It will change both, Consumer and Publisher connections.
+*/
+func (rmq *RabbitMQ) WithConnectionData(host string, port string, username string, password string) *RabbitMQ {
+	if rmq.Consumer != nil {
+		rmq.Consumer.WithConnectionData(host, port, username, password)
+	}
+
+	if rmq.Publisher != nil {
+		rmq.Publisher.WithConnectionData(host, port, username, password)
+	}
+
+	return rmq
+}
+
+/*
+Will close all connections related to the object.
+*/
+func (rmq *RabbitMQ) CloseConnection() {
+	if rmq.Publisher != nil && rmq.Publisher.Channel() != nil && rmq.Publisher.Channel().Connection() != nil {
+		rmq.Publisher.Channel().CloseConnection()
+	}
+
+	if rmq.Consumer != nil && rmq.Consumer.Channel() != nil && rmq.Consumer.Channel().Connection() != nil {
+		rmq.Consumer.Channel().CloseConnection()
+	}
+}
+
+/*
+Will close all channels related to the object.
+*/
+func (rmq *RabbitMQ) CloseChannel() {
+	if rmq.Publisher != nil && rmq.Publisher.Channel() != nil {
+		rmq.Publisher.Channel().CloseChannel()
+	}
+
+	if rmq.Consumer != nil && rmq.Consumer.Channel() != nil {
+		rmq.Consumer.Channel().CloseChannel()
+	}
+}
+
+/*
+Will connect all sub-objects to the rabbitmq server.
+*/
+func (rmq *RabbitMQ) Connect() *RabbitMQ {
+	if rmq.Publisher != nil {
+		rmq.Publisher.Connect()
+	}
+
+	if rmq.Consumer != nil {
+		rmq.Consumer.Connect()
+	}
+
+	return rmq
+}
+
+/*
+UNSAFE!!!
+FOR TEST PURPOSES ONLY!!!
+
+Delete a queue and a exchange.
 safePassword asserts that you're sure of it.
 */
 func DeleteQueueAndExchange(channel *amqp.Channel, queueName string, exchangeName string, safePassword string) (err error) {
 	if safePassword == "doit" {
 		_, err = channel.QueueDelete(queueName, false, false, false)
 		if err != nil {
-			return errors.New("can't delete queue: " + err.Error())
+			return (&errors.Error{}).New("can't delete queue: " + err.Error())
 		}
 
 		err = channel.ExchangeDelete(exchangeName, false, false)
 		if err != nil {
-			return errors.New("can't delete exchange: " + err.Error())
+			return config.Error.New("can't delete exchange: " + err.Error())
 		}
 
 	} else {
-		return errors.New("can't delete: you seem not sure of it")
+		return config.Error.New("can't delete: you seem not sure of it")
 	}
 
 	return nil
