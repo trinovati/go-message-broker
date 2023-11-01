@@ -1,4 +1,0 @@
-IMPROVEMENTS *******************************************
--ConsumeForever() aim a more specific behaviour
-
--PersistData() aim a more specific behaviour
