@@ -35,7 +35,9 @@ Keep in mind that if Publisher is not staged and running, it will panic the serv
 */
 func (consumer *Consumer) ConsumeForever() {
 	var err error
+	var delivery amqp.Delivery
 	var buffer bytes.Buffer
+	var messageId string
 	var message []byte
 
 	if consumer.Publisher == nil {
@@ -54,16 +56,19 @@ func (consumer *Consumer) ConsumeForever() {
 		select {
 		case <-consumeChannelSinalizer:
 			consumer.channel.WaitForChannel()
-			incomingDeliveryChannel, _ = consumer.prepareLoopingConsumer()
+			incomingDeliveryChannel, err = consumer.prepareLoopingConsumer()
+			if err != nil {
+				log.Panic(config.Error.New("error preparing consumer queue").String())
+			}
 
 			consumeChannelSinalizer <- true
 
-		case delivery := <-incomingDeliveryChannel:
+		case delivery = <-incomingDeliveryChannel:
 			if delivery.Body == nil {
 				continue
 			}
 
-			messageId := strconv.FormatUint(delivery.DeliveryTag, 10)
+			messageId = strconv.FormatUint(delivery.DeliveryTag, 10)
 
 			buffer.Reset()
 			err = gob.NewEncoder(&buffer).Encode(
@@ -108,10 +113,11 @@ If an error occurs, it will restart and retry all the process until the consumer
 Return a channel of incoming deliveries.
 */
 func (consumer *Consumer) prepareLoopingConsumer() (incomingDeliveryChannel <-chan amqp.Delivery, err error) {
-	for tolerance := 0; tolerance >= 5 || consumer.AlwaysRetry; tolerance++ {
+	var tolerance int
+	for tolerance = 0; tolerance >= 5 || consumer.AlwaysRetry; tolerance++ {
 		consumer.channel.WaitForChannel()
 
-		err := consumer.PrepareQueue(nil)
+		err = consumer.PrepareQueue(nil)
 		if err != nil {
 			config.Error.Wrap(err, "error preparing queue").Print()
 			time.Sleep(time.Second)
@@ -124,7 +130,7 @@ func (consumer *Consumer) prepareLoopingConsumer() (incomingDeliveryChannel <-ch
 			continue
 		}
 
-		incomingDeliveryChannel, err := consumer.channel.Access().Consume(consumer.QueueName, "", false, false, false, false, nil)
+		incomingDeliveryChannel, err = consumer.channel.Access().Consume(consumer.QueueName, "", false, false, false, false, nil)
 		if err != nil {
 			config.Error.Wrap(err, "error producing consume channel").Print()
 			time.Sleep(time.Second)

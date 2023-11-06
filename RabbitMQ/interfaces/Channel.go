@@ -3,6 +3,7 @@ package interfaces
 import amqp "github.com/rabbitmq/amqp091-go"
 
 type Channel interface {
+	Id() uint64
 	Access() *amqp.Channel
 	Connection() Connection
 

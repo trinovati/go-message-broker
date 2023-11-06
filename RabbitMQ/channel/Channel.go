@@ -79,7 +79,10 @@ To terminante the channel, use CloseChannel() method, it will close the channel 
 
 It puts the channel in confirm mode, so any publishing done will have a response from the server.
 */
-func (c *Channel) Connect() (channel interfaces.Channel) {
+func (c *Channel) Connect() interfaces.Channel {
+	var err error
+	var channel *amqp.Channel
+
 	if c.connection.Connection == nil {
 		_, c.ctxConnection = c.connection.Connect()
 	} else if c.isOpen {
@@ -89,7 +92,7 @@ func (c *Channel) Connect() (channel interfaces.Channel) {
 	for {
 		c.connection.WaitForConnection()
 
-		channel, err := c.connection.Connection.Channel()
+		channel, err = c.connection.Connection.Channel()
 		if err != nil {
 			config.Error.Wrap(err, "error creating RabbitMQ channel").Print()
 			time.Sleep(time.Second)
@@ -115,6 +118,10 @@ func (c *Channel) Connect() (channel interfaces.Channel) {
 	}
 }
 
+func (c Channel) Id() uint64 {
+	return c.ChannelId
+}
+
 /*
 Refresh the closureNotificationChannel for helthyness.
 
@@ -133,33 +140,31 @@ func (c *Channel) updateChannel(channel *amqp.Channel) {
 Method for maintance of a channel.
 */
 func (c *Channel) keepChannel(ctxConnection context.Context, ctxChannel context.Context) {
-	for {
-		select {
-		case <-ctxConnection.Done():
-			log.Printf("connection context of channel id '%d' with connection id '%d' at server '%s' have been closed", c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)
-			c.CloseChannel()
+	select {
+	case <-ctxConnection.Done():
+		log.Printf("connection context of channel id '%d' with connection id '%d' at server '%s' have been closed", c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)
+		c.CloseChannel()
 
-		case <-ctxChannel.Done():
-			log.Printf("channel context of channel id '%d' with connection id '%d' at server '%s' have been closed", c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)
-			c.Channel.Close()
+	case <-ctxChannel.Done():
+		log.Printf("channel context of channel id '%d' with connection id '%d' at server '%s' have been closed", c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)
+		c.Channel.Close()
 
-		case closeNotification := <-c.closureNotificationChannel:
-			c.isOpen = false
-			c.Channel.Close()
+	case closeNotification := <-c.closureNotificationChannel:
+		c.isOpen = false
+		c.Channel.Close()
 
-			if closeNotification != nil {
-				c.lastChannelError = closeNotification
-				config.Error.New(fmt.Sprintf("channel of channel id '%d' with connection id '%d' at server '%s' have closed with\nreason: '%s'\nerror: '%s'\nstatus code: '%d'", c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress, closeNotification.Reason, closeNotification.Error(), closeNotification.Code)).Print()
+		if closeNotification != nil {
+			c.lastChannelError = closeNotification
+			config.Error.New(fmt.Sprintf("channel of channel id '%d' with connection id '%d' at server '%s' have closed with\nreason: '%s'\nerror: '%s'\nstatus code: '%d'", c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress, closeNotification.Reason, closeNotification.Error(), closeNotification.Code)).Print()
 
-			} else {
-				config.Error.New(fmt.Sprintf("connection of channel id '%d' with connection id '%d' at server '%s' have closed with no specified reason", c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)).Print()
-			}
-
-			c.Connect()
+		} else {
+			config.Error.New(fmt.Sprintf("connection of channel id '%d' with connection id '%d' at server '%s' have closed with no specified reason", c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)).Print()
 		}
 
-		runtime.Goexit()
+		c.Connect()
 	}
+
+	runtime.Goexit()
 }
 
 /*

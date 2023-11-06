@@ -35,11 +35,11 @@ type Connection struct {
 Build an object used to reference a amqp.Connection and store all the data needed to keep track of its health.
 */
 func NewConnection() *Connection {
-	protocol := config.RABBITMQ_PROTOCOL
-	user := url.QueryEscape(config.RABBITMQ_USERNAME)
-	password := url.QueryEscape(config.RABBITMQ_PASSWORD)
-	ServerAddress := url.QueryEscape(config.RABBITMQ_HOST)
-	port := url.QueryEscape(config.RABBITMQ_PORT)
+	var protocol string = config.RABBITMQ_PROTOCOL
+	var user string = url.QueryEscape(config.RABBITMQ_USERNAME)
+	var password string = url.QueryEscape(config.RABBITMQ_PASSWORD)
+	var ServerAddress string = url.QueryEscape(config.RABBITMQ_HOST)
+	var port string = url.QueryEscape(config.RABBITMQ_PORT)
 
 	return &Connection{
 		protocol:                   protocol,
@@ -66,6 +66,10 @@ func (c *Connection) WithConnectionData(host string, port string, username strin
 	return c
 }
 
+func (c Connection) Id() uint64 {
+	return c.ConnectionId
+}
+
 /*
 Connect to the RabbitMQ server and open a goroutine for the connection maintance.
 
@@ -74,13 +78,16 @@ If false, it will retry connection on the same server every time it is lost.
 
 It is safe to share connection by multiple objects.
 */
-func (c *Connection) Connect() (connection interfaces.Connection, ctx context.Context) {
+func (c *Connection) Connect() (conn interfaces.Connection, ctx context.Context) {
+	var err error
+	var connection *amqp.Connection
+
 	if c.isOpen {
 		return c, nil
 	}
 
 	for {
-		connection, err := amqp.Dial(c.protocol + "://" + c.user + ":" + c.password + "@" + c.ServerAddress + ":" + c.port + "/")
+		connection, err = amqp.Dial(c.protocol + "://" + c.user + ":" + c.password + "@" + c.ServerAddress + ":" + c.port + "/")
 		if err != nil {
 			config.Error.Wrap(err, "error creating a connection linked to RabbitMQ server '"+c.ServerAddress+"'").Print()
 			time.Sleep(time.Second)

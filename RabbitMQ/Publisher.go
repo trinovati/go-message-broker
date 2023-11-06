@@ -29,9 +29,6 @@ type Publisher struct {
 	AlwaysRetry       bool
 }
 
-/*
-Builds a new object that holds all information needed for publishing into a RabbitMQ queue.
-*/
 func NewPublisher(
 	exchangeName string,
 	exchangeType string,
@@ -103,9 +100,9 @@ In case of unexistent queue, it will create the queue.
 In case of queue not beeing binded to any exchange, it will bind it to a exchange.
 */
 func (publisher *Publisher) PrepareQueue(gobTarget []byte) (err error) {
-	var queue amqp.Queue
 	var target dto.Target
 	var buffer bytes.Buffer
+	var tolerance int
 
 	if gobTarget != nil {
 		_, err = buffer.Write(gobTarget)
@@ -126,7 +123,7 @@ func (publisher *Publisher) PrepareQueue(gobTarget []byte) (err error) {
 		}
 	}
 
-	for tolerance := 0; publisher.AlwaysRetry || tolerance <= 5; tolerance++ {
+	for tolerance = 0; publisher.AlwaysRetry || tolerance <= 5; tolerance++ {
 		publisher.channel.WaitForChannel()
 
 		err = publisher.channel.Access().ExchangeDeclare(target.Exchange, target.ExchangeType, true, false, false, false, nil)
@@ -136,16 +133,9 @@ func (publisher *Publisher) PrepareQueue(gobTarget []byte) (err error) {
 			continue
 		}
 
-		queue, err = publisher.channel.Access().QueueDeclare(target.Queue, true, false, false, false, nil)
+		_, err = publisher.channel.Access().QueueDeclare(target.Queue, true, false, false, false, nil)
 		if err != nil {
 			config.Error.Wrap(err, "error creating queue").Print()
-			time.Sleep(time.Second)
-			continue
-		}
-
-		if queue.Name != target.Queue {
-			err = config.Error.New("created queue name '" + queue.Name + "' and expected queue name '" + target.Queue + "' are diferent")
-			err.(interfaces.Error).Print()
 			time.Sleep(time.Second)
 			continue
 		}
@@ -176,6 +166,8 @@ func (publisher *Publisher) Publish(body []byte, gobTarget []byte) (err error) {
 	var queueName string = publisher.QueueName
 	var accessKey string = publisher.AccessKey
 	var target dto.Target
+	var success bool
+	var confirmation *amqp.DeferredConfirmation
 
 	if gobTarget != nil {
 		_, err = buffer.Write(gobTarget)
@@ -201,47 +193,34 @@ func (publisher *Publisher) Publish(body []byte, gobTarget []byte) (err error) {
 		DeliveryMode: amqp.Persistent,
 	}
 
-	publisher.channel.WaitForChannel()
-	notifyFlowChannel := publisher.channel.Access().NotifyFlow(make(chan bool))
-
 	for {
-		select {
-		case flowNotify := <-notifyFlowChannel:
-			if flowNotify {
+		publisher.channel.WaitForChannel()
+
+		confirmation, err = publisher.channel.Access().PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, accessKey, true, false, message)
+		if err != nil {
+			if publisher.AlwaysRetry {
+				config.Error.Wrap(err, "error publishing message").Print()
+				time.Sleep(time.Second)
 				continue
-			}
-
-			close(notifyFlowChannel)
-			return config.Error.New("queue '" + queueName + "' flow is closed").SetStatus(config.RETRY_POSSILBE)
-
-		default:
-			publisher.channel.WaitForChannel()
-			confirmation, err := publisher.channel.Access().PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, accessKey, true, false, message)
-			if err != nil {
-				if publisher.AlwaysRetry {
-					config.Error.Wrap(err, "error publishing message").Print()
-					time.Sleep(time.Second)
-					continue
-				} else {
-					return config.Error.Wrap(err, "error publishing message").SetStatus(config.RETRY_POSSILBE)
-				}
-			}
-
-			success := confirmation.Wait()
-			if success {
-				log.Println("SUCCESS publishing on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
-				return nil
-
 			} else {
-				log.Println("FAILED publishing on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
+				return config.Error.Wrap(err, "error publishing message").SetStatus(config.RETRY_POSSILBE)
+			}
+		}
 
-				if publisher.AlwaysRetry {
-					config.Error.New("error publishing message").Print()
-					time.Sleep(time.Second)
-					continue
-				} else {
-					return config.Error.New("error publishing message").SetStatus(config.RETRY_POSSILBE)
-				}
+		success = confirmation.Wait()
+		if success {
+			log.Println("SUCCESS publishing on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
+			return nil
+
+		} else {
+			log.Println("FAILED publishing on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
+
+			if publisher.AlwaysRetry {
+				config.Error.New("error publishing message").Print()
+				time.Sleep(time.Second)
+				continue
+			} else {
+				return config.Error.New("error publishing message").SetStatus(config.RETRY_POSSILBE)
 			}
 		}
 	}

@@ -33,9 +33,6 @@ type Consumer struct {
 	AlwaysRetry        bool
 }
 
-/*
-Builds a new object that holds all information needed for consuming from RabbitMQ queue.
-*/
 func NewConsumer(
 	Publisher interfaces.Publisher,
 	DeliveryChannel chan []byte,
@@ -167,13 +164,9 @@ func (consumer *Consumer) PrepareQueue(gobTarget []byte) (err error) {
 		return config.Error.New("channel dropped before declaring queue")
 	}
 
-	queue, err := consumer.channel.Access().QueueDeclare(target.Queue, true, false, false, false, nil)
+	_, err = consumer.channel.Access().QueueDeclare(target.Queue, true, false, false, false, nil)
 	if err != nil {
 		return config.Error.Wrap(err, "error creating queue")
-	}
-
-	if queue.Name != consumer.QueueName {
-		return config.Error.New("created queue name '" + queue.Name + "' and expected queue name '" + target.Queue + "' are diferent")
 	}
 
 	if consumer.channel.IsChannelDown() {
