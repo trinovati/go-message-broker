@@ -21,34 +21,43 @@ Since the connection have a intimate relation with the address of amqp.Channel, 
 shared channel purposes, so all shared channels Channel objects points toward one object, and in case of channel remake, Channel object will point towards it.
 */
 type Channel struct {
+	ChannelId                  uint64
+	ChannelName                string
 	connection                 *connection.Connection
 	Channel                    *amqp.Channel
 	isOpen                     bool
 	closureNotificationChannel chan *amqp.Error
 	lastChannelError           *amqp.Error
-	cancelContext              context.CancelFunc
-	ctxConnection              context.Context
-	ChannelId                  uint64
+	Context                    context.Context
+	CancelContext              context.CancelFunc
 }
 
 /*
 Build an object used to reference a amqp.Channel and store all the data needed to keep track of its health.
 */
-func NewChannel() *Channel {
+func NewChannel(name string) *Channel {
 	return &Channel{
+		ChannelName:                name,
 		connection:                 connection.NewConnection(),
 		Channel:                    nil,
 		isOpen:                     false,
 		closureNotificationChannel: nil,
 		lastChannelError:           nil,
-		cancelContext:              nil,
-		ctxConnection:              nil,
+		CancelContext:              nil,
 		ChannelId:                  0,
 	}
 }
 
 func (c Channel) Access() *amqp.Channel {
 	return c.Channel
+}
+
+func (c Channel) Id() uint64 {
+	return c.ChannelId
+}
+
+func (c Channel) Name() string {
+	return c.ChannelName
 }
 
 func (c *Channel) SetConnection(conn interfaces.Connection) interfaces.Channel {
@@ -83,8 +92,11 @@ func (c *Channel) Connect() interfaces.Channel {
 	var err error
 	var channel *amqp.Channel
 
+	c.connection.Mutex.Lock()
+	defer c.connection.Mutex.Unlock()
+
 	if c.connection.Connection == nil {
-		_, c.ctxConnection = c.connection.Connect()
+		c.connection.Connect()
 	} else if c.isOpen {
 		return c
 	}
@@ -94,32 +106,27 @@ func (c *Channel) Connect() interfaces.Channel {
 
 		channel, err = c.connection.Connection.Channel()
 		if err != nil {
-			config.Error.Wrap(err, "error creating RabbitMQ channel").Print()
+			config.Error.Wrap(err, fmt.Sprintf("error creating RabbitMQ channel '%s'", c.ChannelName)).Print()
 			time.Sleep(time.Second)
 			continue
 		}
 
 		err = channel.Confirm(false)
 		if err != nil {
-			config.Error.Wrap(err, "error configuring channel with Confirm() protocol").Print()
+			config.Error.Wrap(err, fmt.Sprintf("error configuring channel '%s' with Confirm() protocol", c.ChannelName)).Print()
 			continue
 		}
 
 		c.updateChannel(channel)
-		log.Printf("Successfully opened channel with id '%d' with connection id '%d' at server '%s'", c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)
+		log.Printf("Successfully opened channel '%s' with id '%d' with connection id '%d' at server '%s'", c.ChannelName, c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)
 		c.isOpen = true
 
-		ctx, cancel := context.WithCancel(context.Background())
-		c.cancelContext = cancel
+		c.Context, c.CancelContext = context.WithCancel(context.Background())
 
-		go c.keepChannel(c.ctxConnection, ctx)
+		go c.keepChannel()
 
 		return c
 	}
-}
-
-func (c Channel) Id() uint64 {
-	return c.ChannelId
 }
 
 /*
@@ -139,14 +146,14 @@ func (c *Channel) updateChannel(channel *amqp.Channel) {
 /*
 Method for maintance of a channel.
 */
-func (c *Channel) keepChannel(ctxConnection context.Context, ctxChannel context.Context) {
+func (c *Channel) keepChannel() {
 	select {
-	case <-ctxConnection.Done():
-		log.Printf("connection context of channel id '%d' with connection id '%d' at server '%s' have been closed", c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)
+	case <-c.connection.Context.Done():
+		log.Printf("connection context of channel '%s' id '%d' with connection id '%d' at server '%s' have been closed", c.ChannelName, c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)
 		c.CloseChannel()
 
-	case <-ctxChannel.Done():
-		log.Printf("channel context of channel id '%d' with connection id '%d' at server '%s' have been closed", c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)
+	case <-c.Context.Done():
+		log.Printf("channel context of channel '%s'l id '%d' with connection id '%d' at server '%s' have been closed", c.ChannelName, c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)
 		c.Channel.Close()
 
 	case closeNotification := <-c.closureNotificationChannel:
@@ -155,10 +162,10 @@ func (c *Channel) keepChannel(ctxConnection context.Context, ctxChannel context.
 
 		if closeNotification != nil {
 			c.lastChannelError = closeNotification
-			config.Error.New(fmt.Sprintf("channel of channel id '%d' with connection id '%d' at server '%s' have closed with\nreason: '%s'\nerror: '%s'\nstatus code: '%d'", c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress, closeNotification.Reason, closeNotification.Error(), closeNotification.Code)).Print()
+			config.Error.New(fmt.Sprintf("channel of channel '%s' id '%d' with connection id '%d' at server '%s' have closed with\nreason: '%s'\nerror: '%s'\nstatus code: '%d'", c.ChannelName, c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress, closeNotification.Reason, closeNotification.Error(), closeNotification.Code)).Print()
 
 		} else {
-			config.Error.New(fmt.Sprintf("connection of channel id '%d' with connection id '%d' at server '%s' have closed with no specified reason", c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)).Print()
+			config.Error.New(fmt.Sprintf("connection of channel '%s' id '%d' with connection id '%d' at server '%s' have closed with no specified reason", c.ChannelName, c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)).Print()
 		}
 
 		c.Connect()
@@ -173,8 +180,8 @@ Method for closing the channel via context, sending  signal for all objects shar
 func (c *Channel) CloseChannel() {
 	c.isOpen = false
 
-	if c.cancelContext != nil {
-		c.cancelContext()
+	if c.CancelContext != nil {
+		c.CancelContext()
 	}
 }
 
@@ -199,7 +206,7 @@ func (c *Channel) WaitForChannel() {
 			return
 		}
 
-		log.Println("waiting for rabbitmq channel")
+		log.Printf("waiting for rabbitmq channel '%s'\n", c.ChannelName)
 		time.Sleep(500 * time.Millisecond)
 	}
 }
