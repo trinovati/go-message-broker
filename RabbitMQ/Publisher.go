@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"fmt"
 	"log"
-	"strconv"
 	"time"
 
 	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/channel"
@@ -30,13 +30,14 @@ type Publisher struct {
 }
 
 func NewPublisher(
+	name string,
 	exchangeName string,
 	exchangeType string,
 	queueName string,
 	accessKey string,
 ) *Publisher {
 	return &Publisher{
-		channel:           channel.NewChannel(),
+		channel:           channel.NewChannel(name),
 		ExchangeName:      exchangeName,
 		ExchangeType:      exchangeType,
 		QueueName:         queueName,
@@ -51,19 +52,21 @@ func (publisher Publisher) Behaviour() (behaviour string) {
 }
 
 func (publisher *Publisher) ShareChannel(behaviour interfaces.Behaviour) interfaces.Behaviour {
-	publisher.channel = behaviour.Channel()
+	publisher.channel = behaviour.ChannelOf(publisher.Behaviour())
 
 	return publisher
 }
 
 func (publisher *Publisher) ShareConnection(behaviour interfaces.Behaviour) interfaces.Behaviour {
-	publisher.channel.SetConnection(behaviour.Connection())
+	publisher.channel.SetConnection(behaviour.ConnectionOf(publisher.Behaviour()))
 
 	return publisher
 }
 
 func (publisher *Publisher) Connect() interfaces.Behaviour {
-	publisher.channel.Connect()
+	if publisher.channel.IsChannelDown() {
+		publisher.channel.Connect()
+	}
 
 	return publisher
 }
@@ -76,8 +79,28 @@ func (publisher *Publisher) CloseConnection() {
 	publisher.channel.CloseConnection()
 }
 
+func (publisher Publisher) ConnectionOf(behaviour string) interfaces.Connection {
+	var connection interfaces.Connection = nil
+
+	if publisher.Behaviour() == behaviour {
+		connection = publisher.channel.Connection()
+	}
+
+	return connection
+}
+
 func (publisher Publisher) Connection() interfaces.Connection {
 	return publisher.channel.Connection()
+}
+
+func (publisher Publisher) ChannelOf(behaviour string) interfaces.Channel {
+	var channel interfaces.Channel = nil
+
+	if publisher.Behaviour() == behaviour {
+		channel = publisher.channel
+	}
+
+	return channel
 }
 
 func (publisher Publisher) Channel() interfaces.Channel {
@@ -107,12 +130,12 @@ func (publisher *Publisher) PrepareQueue(gobTarget []byte) (err error) {
 	if gobTarget != nil {
 		_, err = buffer.Write(gobTarget)
 		if err != nil {
-			return config.Error.Wrap(err, "error writing to buffer")
+			return config.Error.Wrap(err, fmt.Sprintf("error writing to buffer at channel '%s'", publisher.channel.Name()))
 		}
 
 		err = gob.NewDecoder(&buffer).Decode(&target)
 		if err != nil {
-			return config.Error.Wrap(err, "error decoding gob")
+			return config.Error.Wrap(err, fmt.Sprintf("error decoding gob at channel '%s'", publisher.channel.Name()))
 		}
 	} else {
 		target = dto.Target{
@@ -128,21 +151,21 @@ func (publisher *Publisher) PrepareQueue(gobTarget []byte) (err error) {
 
 		err = publisher.channel.Access().ExchangeDeclare(target.Exchange, target.ExchangeType, true, false, false, false, nil)
 		if err != nil {
-			config.Error.Wrap(err, "error creating RabbitMQ exchange").Print()
+			config.Error.Wrap(err, fmt.Sprintf("error creating RabbitMQ exchange at channel '%s'", publisher.channel.Name())).Print()
 			time.Sleep(time.Second)
 			continue
 		}
 
 		_, err = publisher.channel.Access().QueueDeclare(target.Queue, true, false, false, false, nil)
 		if err != nil {
-			config.Error.Wrap(err, "error creating queue").Print()
+			config.Error.Wrap(err, fmt.Sprintf("error creating queue at channel '%s'", publisher.channel.Name())).Print()
 			time.Sleep(time.Second)
 			continue
 		}
 
 		err = publisher.channel.Access().QueueBind(target.Queue, target.AccessKey, target.Exchange, false, nil)
 		if err != nil {
-			config.Error.Wrap(err, "error binding queue").Print()
+			config.Error.Wrap(err, fmt.Sprintf("error binding queue at channel '%s'", publisher.channel.Name())).Print()
 			time.Sleep(time.Second)
 			continue
 		}
@@ -151,7 +174,7 @@ func (publisher *Publisher) PrepareQueue(gobTarget []byte) (err error) {
 	}
 
 	if err == nil {
-		err = config.Error.New("could not prepare publish queue for unknown reason")
+		err = config.Error.New(fmt.Sprintf("could not prepare publish queue for unknown reason at channel '%s'", publisher.channel.Name()))
 	}
 
 	return err
@@ -172,12 +195,12 @@ func (publisher *Publisher) Publish(body []byte, gobTarget []byte) (err error) {
 	if gobTarget != nil {
 		_, err = buffer.Write(gobTarget)
 		if err != nil {
-			return config.Error.Wrap(err, "error writing to buffer")
+			return config.Error.Wrap(err, fmt.Sprintf("error writing to buffer at channel '%s'", publisher.channel.Name()))
 		}
 
 		err = gob.NewDecoder(&buffer).Decode(&target)
 		if err != nil {
-			return config.Error.Wrap(err, "error decoding gob")
+			return config.Error.Wrap(err, fmt.Sprintf("error decoding gob at channel '%s'", publisher.channel.Name()))
 		}
 	}
 
@@ -199,28 +222,28 @@ func (publisher *Publisher) Publish(body []byte, gobTarget []byte) (err error) {
 		confirmation, err = publisher.channel.Access().PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, accessKey, true, false, message)
 		if err != nil {
 			if publisher.AlwaysRetry {
-				config.Error.Wrap(err, "error publishing message").Print()
+				config.Error.Wrap(err, fmt.Sprintf("error publishing message at channel '%s'", publisher.channel.Name())).Print()
 				time.Sleep(time.Second)
 				continue
 			} else {
-				return config.Error.Wrap(err, "error publishing message").SetStatus(config.RETRY_POSSILBE)
+				return config.Error.Wrap(err, fmt.Sprintf("error publishing message at channel '%s'", publisher.channel.Name())).SetStatus(config.RETRY_POSSILBE)
 			}
 		}
 
 		success = confirmation.Wait()
 		if success {
-			log.Println("SUCCESS publishing on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
+			log.Printf("SUCCESS publishing on queue '%s' with delivery TAG '%d' at channel '%s'\n", queueName, confirmation.DeliveryTag, publisher.channel.Name())
 			return nil
 
 		} else {
-			log.Println("FAILED publishing on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
+			log.Printf("FAILED publishing on queue '%s' with delivery TAG '%d' at channel '%s'\n", queueName, confirmation.DeliveryTag, publisher.channel.Name())
 
 			if publisher.AlwaysRetry {
-				config.Error.New("error publishing message").Print()
+				config.Error.New(fmt.Sprintf("error publishing message on queue '%s' at channel '%s'", queueName, publisher.channel.Name())).Print()
 				time.Sleep(time.Second)
 				continue
 			} else {
-				return config.Error.New("error publishing message").SetStatus(config.RETRY_POSSILBE)
+				return config.Error.New(fmt.Sprintf("error publishing message on queue '%s' at channel '%s'", queueName, publisher.channel.Name())).SetStatus(config.RETRY_POSSILBE)
 			}
 		}
 	}
