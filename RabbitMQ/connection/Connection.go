@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/url"
 	"runtime"
+	"sync"
 	"time"
 
 	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/config"
@@ -27,7 +28,9 @@ type Connection struct {
 	Connection                 *amqp.Connection
 	lastConnectionError        *amqp.Error
 	closureNotificationChannel chan *amqp.Error
+	Context                    context.Context
 	CancelContext              context.CancelFunc
+	Mutex                      *sync.Mutex
 	ConnectionId               uint64
 }
 
@@ -52,6 +55,7 @@ func NewConnection() *Connection {
 		lastConnectionError:        nil,
 		closureNotificationChannel: nil,
 		ConnectionId:               0,
+		Mutex:                      &sync.Mutex{},
 	}
 }
 
@@ -78,12 +82,12 @@ If false, it will retry connection on the same server every time it is lost.
 
 It is safe to share connection by multiple objects.
 */
-func (c *Connection) Connect() (conn interfaces.Connection, ctx context.Context) {
+func (c *Connection) Connect() interfaces.Connection {
 	var err error
 	var connection *amqp.Connection
 
 	if c.isOpen {
-		return c, nil
+		return c
 	}
 
 	for {
@@ -99,11 +103,11 @@ func (c *Connection) Connect() (conn interfaces.Connection, ctx context.Context)
 
 		c.isOpen = true
 
-		ctx, c.CancelContext = context.WithCancel(context.Background())
+		c.Context, c.CancelContext = context.WithCancel(context.Background())
 
-		go c.keepConnection(ctx)
+		go c.keepConnection(c.Context)
 
-		return c, ctx
+		return c
 	}
 }
 
