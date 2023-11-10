@@ -9,7 +9,9 @@ type Behaviour interface {
 	CloseChannel()
 	CloseConnection()
 
+	ConnectionOf(behaviour string) Connection
 	Connection() Connection
+	ChannelOf(behaviour string) Channel
 	Channel() Channel
 
 	WithConnectionData(host string, port string, username string, password string) Behaviour

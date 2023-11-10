@@ -36,26 +36,43 @@ Populate the adequate RabbitMQ behaviour with the argument.
 Keep in mind that the Consumer behaviour will use the Publisher object to send any report to the server.
 */
 func (rmq *RabbitMQ) Behave(behaviour interfaces.Behaviour) *RabbitMQ {
-	var ok bool
-
 	switch behaviour.Behaviour() {
 	case config.PUBLISHER:
-		rmq.Publisher, ok = behaviour.(interfaces.Publisher)
+		publisher, ok := behaviour.(interfaces.Publisher)
 		if !ok {
 			config.Error.New(fmt.Sprintf("type %T cannot be parsed into Publisher", behaviour)).Print()
 			return rmq
+		}
+
+		if rmq.Publisher != nil {
+			publisher.ShareConnection(rmq.Publisher)
+			rmq.Publisher.CloseChannel()
+		}
+
+		rmq.Publisher = publisher
+
+		if rmq.Consumer != nil {
+			rmq.Consumer.SetPublisher(rmq.Publisher)
 		}
 
 	case config.CONSUMER:
-		rmq.Consumer, ok = behaviour.(interfaces.Consumer)
+		consumer, ok := behaviour.(interfaces.Consumer)
 		if !ok {
 			config.Error.New(fmt.Sprintf("type %T cannot be parsed into Publisher", behaviour)).Print()
 			return rmq
 		}
+
+		if rmq.Consumer != nil {
+			consumer.ShareConnection(rmq.Consumer)
+			rmq.Consumer.CloseChannel()
+		}
+
+		rmq.Consumer = consumer
 
 		if rmq.Publisher == nil {
 			rmq.Behave(
 				NewPublisher(
+					rmq.Consumer.Channel().Name()+"_acknowledger",
 					"",
 					"",
 					"",
@@ -68,6 +85,14 @@ func (rmq *RabbitMQ) Behave(behaviour interfaces.Behaviour) *RabbitMQ {
 	}
 
 	return rmq
+}
+
+func (rmq *RabbitMQ) DeliveryChannel() (gobMessageChannel chan []byte) {
+	if rmq.Consumer == nil {
+		return nil
+	}
+
+	return rmq.Consumer.Deliveries()
 }
 
 /*
