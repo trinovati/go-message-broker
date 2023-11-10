@@ -1,10 +1,8 @@
 package interfaces
 
-import "context"
-
 type Connection interface {
 	Id() uint64
-	Connect() (Connection, context.Context)
+	Connect() Connection
 	CloseConnection()
 
 	IsConnectionDown() bool

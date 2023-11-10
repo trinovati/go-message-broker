@@ -4,6 +4,7 @@ import amqp "github.com/rabbitmq/amqp091-go"
 
 type Channel interface {
 	Id() uint64
+	Name() string
 	Access() *amqp.Channel
 	Connection() Connection
 
