@@ -7,7 +7,6 @@ import (
 	"log"
 	"reflect"
 	"strconv"
-	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +23,7 @@ func TestConnectionRabbitMQ(t *testing.T) {
 
 	messageBroker := rabbitmq.NewRabbitMQ().Behave(
 		rabbitmq.NewPublisher(
+			"test",
 			"",
 			"",
 			"",
@@ -31,8 +31,7 @@ func TestConnectionRabbitMQ(t *testing.T) {
 		),
 	).Behave(
 		rabbitmq.NewConsumer(
-			nil,
-			nil,
+			"test",
 			nil,
 			"",
 			"",
@@ -100,6 +99,7 @@ func TestChannelRabbitMQ(t *testing.T) {
 
 	messageBroker := rabbitmq.NewRabbitMQ().Behave(
 		rabbitmq.NewPublisher(
+			"test",
 			"",
 			"",
 			"",
@@ -107,8 +107,7 @@ func TestChannelRabbitMQ(t *testing.T) {
 		),
 	).Behave(
 		rabbitmq.NewConsumer(
-			nil,
-			nil,
+			"test",
 			nil,
 			"",
 			"",
@@ -170,6 +169,7 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 
 	messageBroker := rabbitmq.NewRabbitMQ().Behave(
 		rabbitmq.NewPublisher(
+			"test",
 			"",
 			"",
 			"",
@@ -177,8 +177,7 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 		),
 	).Behave(
 		rabbitmq.NewConsumer(
-			nil,
-			nil,
+			"test",
 			nil,
 			"",
 			"",
@@ -191,6 +190,7 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 
 	newMessageBroker := rabbitmq.NewRabbitMQ().Behave(
 		rabbitmq.NewPublisher(
+			"test",
 			"",
 			"",
 			"",
@@ -198,8 +198,7 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 		),
 	).Behave(
 		rabbitmq.NewConsumer(
-			nil,
-			nil,
+			"test",
 			nil,
 			"",
 			"",
@@ -232,6 +231,7 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 
 	messageBroker := rabbitmq.NewRabbitMQ().Behave(
 		rabbitmq.NewPublisher(
+			"test",
 			"",
 			"",
 			"",
@@ -239,8 +239,7 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 		),
 	).Behave(
 		rabbitmq.NewConsumer(
-			nil,
-			nil,
+			"test",
 			nil,
 			"",
 			"",
@@ -253,6 +252,7 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 
 	newMessageBroker := rabbitmq.NewRabbitMQ().Behave(
 		rabbitmq.NewPublisher(
+			"test",
 			"",
 			"",
 			"",
@@ -260,8 +260,7 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 		),
 	).Behave(
 		rabbitmq.NewConsumer(
-			nil,
-			nil,
+			"test",
 			nil,
 			"",
 			"",
@@ -318,6 +317,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 
 	messageBroker := rabbitmq.NewRabbitMQ().Behave(
 		rabbitmq.NewPublisher(
+			"test",
 			exchangeName,
 			exchangeType,
 			queueName,
@@ -400,6 +400,7 @@ func TestPersistRabbitMQ(t *testing.T) {
 
 	messageBroker := rabbitmq.NewRabbitMQ().Behave(
 		rabbitmq.NewPublisher(
+			"test",
 			exchangeName,
 			exchangeType,
 			queueName,
@@ -468,14 +469,12 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 	accessKey := queueName
 	qos := 0
 	purgeBeforeStarting := true
-	deliveryChannel := make(chan []byte)
-	unacknowledgedDeliveryMap := &sync.Map{}
+	var deliveryChannel chan []byte
 
 	messageBroker := rabbitmq.NewRabbitMQ().Behave(
 		rabbitmq.NewConsumer(
+			"test",
 			nil,
-			deliveryChannel,
-			unacknowledgedDeliveryMap,
 			exchangeName,
 			exchangeType,
 			queueName,
@@ -484,6 +483,8 @@ func TestConsumeForeverRabbitMQ(t *testing.T) {
 			purgeBeforeStarting,
 		),
 	).Connect()
+
+	deliveryChannel = messageBroker.DeliveryChannel()
 
 	go messageBroker.ConsumeForever()
 	time.Sleep(time.Second)
