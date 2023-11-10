@@ -3,6 +3,7 @@ package rabbitmq
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
 	"log"
 	"strconv"
 	"time"
@@ -78,7 +79,7 @@ func (consumer *Consumer) ConsumeForever() {
 				},
 			)
 			if err != nil {
-				config.Error.Wrap(err, "error encoding gob").Print()
+				config.Error.Wrap(err, fmt.Sprintf("error encoding gob at channel '%s'", consumer.channel.Name())).Print()
 			}
 
 			message = append([]byte{}, buffer.Bytes()...)
@@ -119,20 +120,20 @@ func (consumer *Consumer) prepareLoopingConsumer() (incomingDeliveryChannel <-ch
 
 		err = consumer.PrepareQueue(nil)
 		if err != nil {
-			config.Error.Wrap(err, "error preparing queue").Print()
+			config.Error.Wrap(err, fmt.Sprintf("error preparing queue at channel '%s'", consumer.channel.Name())).Print()
 			time.Sleep(time.Second)
 			continue
 		}
 
 		if consumer.channel.IsChannelDown() {
-			config.Error.New("connection dropped before preparing consume").Print()
+			config.Error.New(fmt.Sprintf("connection dropped before preparing consume at channel '%s'", consumer.channel.Name())).Print()
 			time.Sleep(time.Second)
 			continue
 		}
 
 		incomingDeliveryChannel, err = consumer.channel.Access().Consume(consumer.QueueName, "", false, false, false, false, nil)
 		if err != nil {
-			config.Error.Wrap(err, "error producing consume channel").Print()
+			config.Error.Wrap(err, fmt.Sprintf("error producing consume channel at channel '%s'", consumer.channel.Name())).Print()
 			time.Sleep(time.Second)
 			continue
 		}
@@ -141,7 +142,7 @@ func (consumer *Consumer) prepareLoopingConsumer() (incomingDeliveryChannel <-ch
 	}
 
 	if err == nil {
-		err = config.Error.New("could not prepare consumer for unknown reason")
+		err = config.Error.New(fmt.Sprintf("could not prepare consumer for unknown reason at channel '%s'", consumer.channel.Name()))
 	}
 
 	return nil, err

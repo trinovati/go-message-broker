@@ -5,7 +5,7 @@ type Consumer interface {
 
 	SetPublisher(publisher Publisher)
 
-	GetDeliveryChannel() (gobMessageChannel chan []byte, err error)
+	Deliveries() (gobMessageChannel chan []byte)
 
 	ConsumeForever()
 	Acknowledge(gobAcknowledge []byte) error

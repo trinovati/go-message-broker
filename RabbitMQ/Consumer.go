@@ -3,6 +3,7 @@ package rabbitmq
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
 	"sync"
 
 	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/channel"
@@ -15,8 +16,7 @@ import (
 Object that holds all information needed for consuming from RabbitMQ queue.
 */
 type Consumer struct {
-	channel interfaces.Channel
-
+	channel            interfaces.Channel
 	Publisher          interfaces.Publisher
 	DeliveryChannel    chan []byte
 	DeliveryMap        *sync.Map
@@ -34,9 +34,8 @@ type Consumer struct {
 }
 
 func NewConsumer(
+	name string,
 	Publisher interfaces.Publisher,
-	DeliveryChannel chan []byte,
-	DeliveryMap *sync.Map,
 	exchangeName string,
 	exchangeType string,
 	queueName string,
@@ -46,9 +45,9 @@ func NewConsumer(
 ) *Consumer {
 	return &Consumer{
 		Publisher:          Publisher,
-		channel:            channel.NewChannel(),
-		DeliveryChannel:    DeliveryChannel,
-		DeliveryMap:        DeliveryMap,
+		channel:            channel.NewChannel(name),
+		DeliveryChannel:    make(chan []byte),
+		DeliveryMap:        &sync.Map{},
 		ExchangeName:       exchangeName,
 		ExchangeType:       exchangeType,
 		QueueName:          queueName,
@@ -67,20 +66,28 @@ func (consumer Consumer) Behaviour() (behaviour string) {
 	return config.CONSUMER
 }
 
+func (consumer *Consumer) Deliveries() (gobMessageChannel chan []byte) {
+	return consumer.DeliveryChannel
+}
+
 func (consumer *Consumer) ShareChannel(behaviour interfaces.Behaviour) interfaces.Behaviour {
-	consumer.channel = behaviour.Channel()
+	consumer.channel = behaviour.ChannelOf(consumer.Behaviour())
+
+	consumer.Publisher.ShareChannel(behaviour)
 
 	return consumer
 }
 
 func (consumer *Consumer) ShareConnection(behaviour interfaces.Behaviour) interfaces.Behaviour {
-	consumer.channel.SetConnection(behaviour.Connection())
+	consumer.channel.SetConnection(behaviour.ConnectionOf(consumer.Behaviour()))
+
+	consumer.Publisher.ShareConnection(behaviour)
 
 	return consumer
 }
 
 func (consumer *Consumer) Connect() interfaces.Behaviour {
-	if consumer.channel.IsChannelDown() || consumer.channel.Connection().IsConnectionDown() {
+	if consumer.channel.IsChannelDown() {
 		consumer.channel.Connect()
 	}
 
@@ -95,8 +102,32 @@ func (consumer *Consumer) CloseConnection() {
 	consumer.channel.CloseConnection()
 }
 
+func (consumer Consumer) ConnectionOf(behaviour string) interfaces.Connection {
+	var connection interfaces.Connection = nil
+
+	if consumer.Behaviour() == behaviour {
+		connection = consumer.channel.Connection()
+	} else if consumer.Publisher.Behaviour() == behaviour {
+		connection = consumer.Publisher.ConnectionOf(behaviour)
+	}
+
+	return connection
+}
+
 func (consumer Consumer) Connection() interfaces.Connection {
 	return consumer.channel.Connection()
+}
+
+func (consumer Consumer) ChannelOf(behaviour string) interfaces.Channel {
+	var channel interfaces.Channel = nil
+
+	if consumer.Behaviour() == behaviour {
+		channel = consumer.channel
+	} else if consumer.Publisher.Behaviour() == behaviour {
+		channel = consumer.Publisher.ChannelOf(behaviour)
+	}
+
+	return channel
 }
 
 func (consumer Consumer) Channel() interfaces.Channel {
@@ -133,12 +164,12 @@ func (consumer *Consumer) PrepareQueue(gobTarget []byte) (err error) {
 	if gobTarget != nil {
 		_, err = buffer.Write(gobTarget)
 		if err != nil {
-			return config.Error.Wrap(err, "error writing to buffer")
+			return config.Error.Wrap(err, fmt.Sprintf("error writing to buffer at channel '%s'", consumer.channel.Name()))
 		}
 
 		err = gob.NewDecoder(&buffer).Decode(&target)
 		if err != nil {
-			return config.Error.Wrap(err, "error decoding gob")
+			return config.Error.Wrap(err, fmt.Sprintf("error decoding gob at channel '%s'", consumer.channel.Name()))
 		}
 	} else {
 		target = dto.Target{
@@ -152,45 +183,45 @@ func (consumer *Consumer) PrepareQueue(gobTarget []byte) (err error) {
 	}
 
 	if consumer.channel.IsChannelDown() {
-		return config.Error.New("channel dropped before declaring exchange")
+		return config.Error.New(fmt.Sprintf("channel dropped before declaring exchange at channel '%s'", consumer.channel.Name()))
 	}
 
 	err = consumer.channel.Access().ExchangeDeclare(target.Exchange, target.ExchangeType, true, false, false, false, nil)
 	if err != nil {
-		return config.Error.Wrap(err, "error creating RabbitMQ exchange")
+		return config.Error.Wrap(err, fmt.Sprintf("error creating RabbitMQ exchange at channel '%s'", consumer.channel.Name()))
 	}
 
 	if consumer.channel.IsChannelDown() {
-		return config.Error.New("channel dropped before declaring queue")
+		return config.Error.New(fmt.Sprintf("channel dropped before declaring queue at channel '%s'", consumer.channel.Name()))
 	}
 
 	_, err = consumer.channel.Access().QueueDeclare(target.Queue, true, false, false, false, nil)
 	if err != nil {
-		return config.Error.Wrap(err, "error creating queue")
+		return config.Error.Wrap(err, fmt.Sprintf("error creating queue at channel '%s'", consumer.channel.Name()))
 	}
 
 	if consumer.channel.IsChannelDown() {
-		return config.Error.New("channel dropped before queue binding")
+		return config.Error.New(fmt.Sprintf("channel dropped before queue binding at channel '%s'", consumer.channel.Name()))
 	}
 
 	err = consumer.channel.Access().QueueBind(target.Queue, target.AccessKey, target.Exchange, false, nil)
 	if err != nil {
-		return config.Error.Wrap(err, "error binding queue")
+		return config.Error.Wrap(err, fmt.Sprintf("error binding queue at channel '%s'", consumer.channel.Name()))
 	}
 
 	err = consumer.channel.Access().Qos(target.Qos, 0, false)
 	if err != nil {
-		return config.Error.Wrap(err, "error qos a channel to limiting the maximum message queue can hold")
+		return config.Error.Wrap(err, fmt.Sprintf("error qos a channel to limiting the maximum message queue can hold at channel '%s'", consumer.channel.Name()))
 	}
 
 	if target.Purge {
 		if consumer.channel.IsChannelDown() {
-			return config.Error.New("channel dropped before purging queue")
+			return config.Error.New(fmt.Sprintf("channel dropped before purging queue at channel '%s'", consumer.channel.Name()))
 		}
 
 		_, err = consumer.channel.Access().QueuePurge(target.Queue, true)
 		if err != nil {
-			return config.Error.Wrap(err, "error purging queue '"+target.Queue+"'")
+			return config.Error.Wrap(err, fmt.Sprintf("error purging queue '%s' at channel '%s'", target.Queue, consumer.channel.Name()))
 		}
 	}
 
@@ -203,12 +234,12 @@ func (consumer *Consumer) PrepareQueue(gobTarget []byte) (err error) {
 
 	err = gob.NewEncoder(&buffer).Encode(&target)
 	if err != nil {
-		return config.Error.Wrap(err, "error encoding gob")
+		return config.Error.Wrap(err, fmt.Sprintf("error encoding gob at channel '%s'", consumer.channel.Name()))
 	}
 
 	err = consumer.Publisher.PrepareQueue(buffer.Bytes())
 	if err != nil {
-		return config.Error.Wrap(err, "error preparing failed messages queue")
+		return config.Error.Wrap(err, fmt.Sprintf("error preparing failed messages queue at channel '%s'", consumer.channel.Name()))
 	}
 
 	return nil
