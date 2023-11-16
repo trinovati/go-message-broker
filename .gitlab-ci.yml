@@ -23,7 +23,7 @@ variables:
 testing:
   stage: test
   rules:
-    - if: '$CI_COMMIT_BRANCH =~ /^release\/v\d+\-\d+\-\d+$/'
+    - if: '$CI_COMMIT_BRANCH =~ /^release\/v\d+[\-|\.]\d+[\-|\.]\d+$/'
       when: always
     - when: never
   image:
