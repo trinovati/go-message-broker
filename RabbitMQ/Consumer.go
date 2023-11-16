@@ -176,7 +176,7 @@ func (consumer *Consumer) PrepareQueue(gobTarget []byte) (err error) {
 			Exchange:     consumer.ExchangeName,
 			ExchangeType: consumer.ExchangeType,
 			Queue:        consumer.QueueName,
-			AccessKey:    consumer.QueueName,
+			AccessKey:    consumer.AccessKey,
 			Qos:          consumer.Qos,
 			Purge:        consumer.Purge,
 		}
