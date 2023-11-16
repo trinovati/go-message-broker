@@ -4,12 +4,8 @@ services:
   - docker:20.10.16-dind
 
 stages:
-  # - codequality
-  # - security
-  - release
   - test
-  - build-and-push
-  - deploy
+  - release
 
 variables:
   # Runner
