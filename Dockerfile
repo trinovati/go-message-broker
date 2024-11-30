@@ -1,4 +1,4 @@
-FROM golang:1.21.0-alpine
+FROM golang:1.23.3-alpine
 
 RUN apk add git
 
@@ -21,7 +21,3 @@ RUN go mod download
 RUN go mod verify
 
 COPY . ./
-
-RUN go build -o message_handle .
-
-CMD ["./message_handle"]

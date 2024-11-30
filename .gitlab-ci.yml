@@ -23,7 +23,7 @@ testing:
       when: always
     - when: never
   image:
-    name: golang:1.21.0-alpine
+    name: golang:1.23.3-alpine
     entrypoint: [""]
   script: 
     - apk add git
