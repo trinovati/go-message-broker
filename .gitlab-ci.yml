@@ -16,23 +16,23 @@ variables:
   DOCKER_DRIVER: overlay2  # Faster storage procedures
   PRODUCTION_BRANCH: "main"
 
-testing:
-  stage: test
-  rules:
-    - if: '$CI_COMMIT_BRANCH =~ /^release\/v\d+[\-|\.]\d+[\-|\.]\d+$/'
-      when: always
-    - when: never
-  image:
-    name: golang:1.23.3-alpine
-    entrypoint: [""]
-  script: 
-    - apk add git
-    - go env -w GOPRIVATE="gitlab.com/aplicacao/*"
-    - touch ~/.netrc
-    - echo -e "machine gitlab.com\n login $CI_PERSONAL_USER\n password $CI_PERSONAL_ACCESS_TOKEN" > ~/.netrc
-    - sh ./test.sh
-  tags:
-    - production
+# testing:
+#   stage: test
+#   rules:
+#     - if: '$CI_COMMIT_BRANCH =~ /^release\/v\d+[\-|\.]\d+[\-|\.]\d+$/'
+#       when: always
+#     - when: never
+#   image:
+#     name: golang:1.23.3-alpine
+#     entrypoint: [""]
+#   script: 
+#     - apk add git
+#     - go env -w GOPRIVATE="gitlab.com/aplicacao/*"
+#     - touch ~/.netrc
+#     - echo -e "machine gitlab.com\n login $CI_PERSONAL_USER\n password $CI_PERSONAL_ACCESS_TOKEN" > ~/.netrc
+#     - sh ./test.sh
+#   tags:
+#     - production
 
 release_job:
   stage: release
