@@ -11,5 +11,5 @@ func (rmq *RabbitMQ) Persist(message []byte, gobTarget []byte) (err error) {
 }
 
 func (publisher *Publisher) Persist(message []byte, gobTarget []byte) (err error) {
-	return publisher.Publish(message, gobTarget)
+	return publisher.Publish(message, nil, gobTarget)
 }

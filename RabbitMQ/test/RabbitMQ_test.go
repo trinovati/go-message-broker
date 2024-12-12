@@ -332,7 +332,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 		t.Error("error purging the queue: " + err.Error())
 	}
 
-	err = messageBroker.Publisher.(*rabbitmq.Publisher).Publish([]byte(expectedMessage), nil)
+	err = messageBroker.Publisher.(*rabbitmq.Publisher).Publish([]byte(expectedMessage), nil, nil)
 	if err != nil {
 		t.Error("error publishing to queue: " + err.Error())
 	}
@@ -346,7 +346,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 		t.Error("error at with message body.\nexpected: " + expectedMessage + "\ngot:      " + string(recievedMessage.Body))
 	}
 
-	err = messageBroker.Publisher.(*rabbitmq.Publisher).Publish([]byte(expectedMessage), gobTarget.Bytes())
+	err = messageBroker.Publisher.(*rabbitmq.Publisher).Publish([]byte(expectedMessage), nil, gobTarget.Bytes())
 	if err != nil {
 		t.Error("error publishing to queue: " + err.Error())
 	}

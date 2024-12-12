@@ -183,7 +183,7 @@ func (publisher *Publisher) PrepareQueue(gobTarget []byte) (err error) {
 /*
 Publish data to the queue linked to RabbitMQ.PublishData object.
 */
-func (publisher *Publisher) Publish(body []byte, gobTarget []byte) (err error) {
+func (publisher *Publisher) Publish(body []byte, header map[string]interface{}, gobTarget []byte) (err error) {
 	var buffer bytes.Buffer
 	var exchangeName string = publisher.ExchangeName
 	var queueName string = publisher.QueueName
@@ -211,9 +211,11 @@ func (publisher *Publisher) Publish(body []byte, gobTarget []byte) (err error) {
 	}
 
 	message := amqp.Publishing{
-		ContentType:  "application/json",
-		Body:         body,
-		DeliveryMode: amqp.Persistent,
+		ContentType:     "application/json",
+		ContentEncoding: "utf-8",
+		DeliveryMode:    amqp.Persistent,
+		Headers:         header,
+		Body:            body,
 	}
 
 	for {
