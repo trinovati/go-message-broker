@@ -1,6 +1,6 @@
 module gitlab.com/aplicacao/trinovati-connector-message-brokers/v2
 
-go 1.23.3
+go 1.24.0
 
 require (
 	github.com/pkg/errors v0.9.1
