@@ -1,6 +1,6 @@
 package rabbitmq
 
-import "gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/config"
+import "github.com/trinovati/go-message-broker/RabbitMQ/config"
 
 func (rmq *RabbitMQ) Persist(message []byte, gobTarget []byte) (err error) {
 	if rmq.Publisher == nil {
@@ -11,5 +11,5 @@ func (rmq *RabbitMQ) Persist(message []byte, gobTarget []byte) (err error) {
 }
 
 func (publisher *Publisher) Persist(message []byte, gobTarget []byte) (err error) {
-	return publisher.Publish(message, gobTarget)
+	return publisher.Publish(message, nil, gobTarget)
 }

@@ -8,10 +8,10 @@ import (
 	"log"
 	"time"
 
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/channel"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/config"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/interfaces"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/dto"
+	"github.com/trinovati/go-message-broker/RabbitMQ/channel"
+	"github.com/trinovati/go-message-broker/RabbitMQ/config"
+	"github.com/trinovati/go-message-broker/RabbitMQ/interfaces"
+	"github.com/trinovati/go-message-broker/dto"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -183,7 +183,7 @@ func (publisher *Publisher) PrepareQueue(gobTarget []byte) (err error) {
 /*
 Publish data to the queue linked to RabbitMQ.PublishData object.
 */
-func (publisher *Publisher) Publish(body []byte, gobTarget []byte) (err error) {
+func (publisher *Publisher) Publish(body []byte, header map[string]interface{}, gobTarget []byte) (err error) {
 	var buffer bytes.Buffer
 	var exchangeName string = publisher.ExchangeName
 	var queueName string = publisher.QueueName
@@ -211,9 +211,11 @@ func (publisher *Publisher) Publish(body []byte, gobTarget []byte) (err error) {
 	}
 
 	message := amqp.Publishing{
-		ContentType:  "application/json",
-		Body:         body,
-		DeliveryMode: amqp.Persistent,
+		ContentType:     "application/json",
+		ContentEncoding: "utf-8",
+		DeliveryMode:    amqp.Persistent,
+		Headers:         header,
+		Body:            body,
 	}
 
 	for {

@@ -9,8 +9,8 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/config"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/dto"
+	"github.com/trinovati/go-message-broker/RabbitMQ/config"
+	"github.com/trinovati/go-message-broker/dto"
 )
 
 func (rmq *RabbitMQ) ConsumeForever() {

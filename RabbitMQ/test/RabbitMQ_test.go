@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	rabbitmq "gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/channel"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/connection"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/dto"
+	rabbitmq "github.com/trinovati/go-message-broker/RabbitMQ"
+	"github.com/trinovati/go-message-broker/RabbitMQ/channel"
+	"github.com/trinovati/go-message-broker/RabbitMQ/connection"
+	"github.com/trinovati/go-message-broker/dto"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -332,7 +332,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 		t.Error("error purging the queue: " + err.Error())
 	}
 
-	err = messageBroker.Publisher.(*rabbitmq.Publisher).Publish([]byte(expectedMessage), nil)
+	err = messageBroker.Publisher.(*rabbitmq.Publisher).Publish([]byte(expectedMessage), nil, nil)
 	if err != nil {
 		t.Error("error publishing to queue: " + err.Error())
 	}
@@ -346,7 +346,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 		t.Error("error at with message body.\nexpected: " + expectedMessage + "\ngot:      " + string(recievedMessage.Body))
 	}
 
-	err = messageBroker.Publisher.(*rabbitmq.Publisher).Publish([]byte(expectedMessage), gobTarget.Bytes())
+	err = messageBroker.Publisher.(*rabbitmq.Publisher).Publish([]byte(expectedMessage), nil, gobTarget.Bytes())
 	if err != nil {
 		t.Error("error publishing to queue: " + err.Error())
 	}

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/config"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/interfaces"
+	"github.com/trinovati/go-message-broker/RabbitMQ/config"
+	"github.com/trinovati/go-message-broker/RabbitMQ/interfaces"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
