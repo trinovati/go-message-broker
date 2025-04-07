@@ -33,7 +33,7 @@ jobs:
           go-version: '1.23'
 
       - name: Install netcat
-        run: sudo apt-get update && sudo apt-get install -y netcat
+        run: sudo apt-get install -y netcat-openbsd
 
       - name: Wait for RabbitMQ
         run: |
@@ -48,7 +48,7 @@ jobs:
         run: sh ./test.sh
 
   release:
-    
+
     name: Create Release
     runs-on: ubuntu-latest
     needs: test
