@@ -8,10 +8,10 @@ import (
 	"log"
 	"time"
 
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/channel"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/config"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/interfaces"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/dto"
+	"github.com/trinovati/go-message-broker/RabbitMQ/channel"
+	"github.com/trinovati/go-message-broker/RabbitMQ/config"
+	"github.com/trinovati/go-message-broker/RabbitMQ/interfaces"
+	"github.com/trinovati/go-message-broker/dto"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )

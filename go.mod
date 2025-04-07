@@ -1,4 +1,4 @@
-module gitlab.com/aplicacao/trinovati-connector-message-brokers/v2
+module github.com/trinovati/go-message-broker
 
 go 1.24.0
 

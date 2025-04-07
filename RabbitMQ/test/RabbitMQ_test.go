@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	rabbitmq "gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/channel"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/connection"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/dto"
+	rabbitmq "github.com/trinovati/go-message-broker/RabbitMQ"
+	"github.com/trinovati/go-message-broker/RabbitMQ/channel"
+	"github.com/trinovati/go-message-broker/RabbitMQ/connection"
+	"github.com/trinovati/go-message-broker/dto"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )

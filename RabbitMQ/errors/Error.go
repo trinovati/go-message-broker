@@ -5,7 +5,7 @@ import (
 	"log"
 
 	"github.com/pkg/errors"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/interfaces"
+	"github.com/trinovati/go-message-broker/RabbitMQ/interfaces"
 )
 
 type Error struct {
