@@ -1,0 +1,39 @@
+name: Create Realise
+
+on:
+  workflow_run:
+    workflows: ["Test Workflow"]
+    types:
+      - completed
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/heads/release/v')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract Tag Name
+        id: extract_tag
+        run: |
+          BRANCH_NAME="${GITHUB_REF#refs/heads/release/}"
+          TAG_NAME=$(echo "$BRANCH_NAME" | sed 's/-/\./g')
+          echo "tag=$TAG_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Create Git Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.extract_tag.outputs.tag }}
+          git push origin ${{ steps.extract_tag.outputs.tag }}
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.extract_tag.outputs.tag }}
+          name: "Release ${{ steps.extract_tag.outputs.tag }}"
+          body: "Release automatically created from branch ${{ github.ref_name }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

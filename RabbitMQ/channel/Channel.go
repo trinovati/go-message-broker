@@ -2,28 +2,28 @@ package channel
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"runtime"
 	"time"
 
+	"github.com/google/uuid"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/trinovati/go-message-broker/RabbitMQ/config"
 	"github.com/trinovati/go-message-broker/RabbitMQ/connection"
-	"github.com/trinovati/go-message-broker/RabbitMQ/interfaces"
-
-	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 /*
 Object used to reference a amqp.Channel address.
 
-Since the connection have a intimate relation with the address of amqp.Channel, it could not be moved to another memory position for
-shared channel purposes, so all shared channels Channel objects points toward one object, and in case of channel remake, Channel object will point towards it.
+Since the connections have intimate relation with the address of amqp.Channel, it could not be moved to another memory position for
+shared channel purposes, so all shared channels point to a single RabbitMQChannel object.
+
+The purpose of this abstraction is minimize the quantity of open amqp.Channel to RabbitMQ and at the same time make use of a keep alive
+and reconnect technique.
 */
-type Channel struct {
-	ChannelId                  uint64
-	ChannelName                string
-	connection                 *connection.Connection
+type RabbitMQChannel struct {
+	ChannelCount               uint64
+	ChannelId                  uuid.UUID
+	connection                 *connection.RabbitMQConnection
 	Channel                    *amqp.Channel
 	isOpen                     bool
 	closureNotificationChannel chan *amqp.Error
@@ -33,62 +33,46 @@ type Channel struct {
 }
 
 /*
-Build an object used to reference a amqp.Channel and store all the data needed to keep track of its health.
+Builder of RabbitMQChannel object.
 */
-func NewChannel(name string) *Channel {
-	return &Channel{
-		ChannelName:                name,
-		connection:                 connection.NewConnection(),
+func NewRabbitMQChannel(env config.RABBITMQ_CONFIG) *RabbitMQChannel {
+	return &RabbitMQChannel{
+		ChannelId:                  uuid.New(),
+		connection:                 connection.NewRabbitMQConnection(env),
 		Channel:                    nil,
 		isOpen:                     false,
 		closureNotificationChannel: nil,
 		lastChannelError:           nil,
 		CancelContext:              nil,
-		ChannelId:                  0,
+		ChannelCount:               0,
 	}
 }
 
-func (c Channel) Access() *amqp.Channel {
-	return c.Channel
-}
-
-func (c Channel) Id() uint64 {
-	return c.ChannelId
-}
-
-func (c Channel) Name() string {
-	return c.ChannelName
-}
-
-func (c *Channel) SetConnection(conn interfaces.Connection) interfaces.Channel {
-	var ok bool
-	c.connection, ok = conn.(*connection.Connection)
-	if !ok {
-		log.Panic(config.Error.New("%T cannot be accepted as connection").String())
-	}
-
-	return c
-}
-
-func (c Channel) Connection() interfaces.Connection {
-	return c.connection
-}
-
-func (c *Channel) WithConnectionData(host string, port string, username string, password string) interfaces.Channel {
-	c.connection.WithConnectionData(host, port, username, password)
+/*
+Setter with the purpose of share RabbitMQConnection between multiple RabbitMQChannel.
+*/
+func (c *RabbitMQChannel) SetConnection(conn *connection.RabbitMQConnection) *RabbitMQChannel {
+	c.connection = conn
 
 	return c
 }
 
 /*
-Create and keep a channel linked to RabbitMQ connection.
+Getter of the RabbitMQConnection.
+*/
+func (c RabbitMQChannel) Connection() *connection.RabbitMQConnection {
+	return c.connection
+}
 
-If channel is dropped for any reason it will try remake the channel.
-To terminante the channel, use CloseChannel() method, it will close the channel via context.Done().
+/*
+Create and keep alive a amqp.Channel linked to RabbitMQ connection.
+
+If channel is dropped for any reason it will try to remake the channel.
+To terminate the channel, use CloseChannel() method, it will close the channel via context.Done().
 
 It puts the channel in confirm mode, so any publishing done will have a response from the server.
 */
-func (c *Channel) Connect() interfaces.Channel {
+func (c *RabbitMQChannel) Connect() *RabbitMQChannel {
 	var err error
 	var channel *amqp.Channel
 
@@ -106,19 +90,19 @@ func (c *Channel) Connect() interfaces.Channel {
 
 		channel, err = c.connection.Connection.Channel()
 		if err != nil {
-			config.Error.Wrap(err, fmt.Sprintf("error creating RabbitMQ channel '%s'", c.ChannelName)).Print()
+			log.Printf("error creating RabbitMQ channel %s: %s\n", c.ChannelId, err.Error())
 			time.Sleep(time.Second)
 			continue
 		}
 
 		err = channel.Confirm(false)
 		if err != nil {
-			config.Error.Wrap(err, fmt.Sprintf("error configuring channel '%s' with Confirm() protocol", c.ChannelName)).Print()
+			log.Printf("error configuring channel %s with Confirm() protocol: %s\n", c.ChannelId, err.Error())
 			continue
 		}
 
 		c.updateChannel(channel)
-		log.Printf("Successfully opened channel '%s' with id '%d' with connection id '%d' at server '%s'", c.ChannelName, c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)
+		log.Printf("opened channel id %s with connection id %s at server %s\n", c.ChannelId.String(), c.connection.ConnectionId.String(), c.connection.Env().RABBITMQ_HOST)
 		c.isOpen = true
 
 		c.Context, c.CancelContext = context.WithCancel(context.Background())
@@ -130,30 +114,36 @@ func (c *Channel) Connect() interfaces.Channel {
 }
 
 /*
-Refresh the closureNotificationChannel for helthyness.
+Refresh the closureNotificationChannel for healthiness.
 
 Reference the newly created amqp.Channel, assuring assincronus concurrent access to multiple objects.
 
-Refresh the channel id for controll of references.
+Refresh the channel count for control of references.
 */
-func (c *Channel) updateChannel(channel *amqp.Channel) {
+func (c *RabbitMQChannel) updateChannel(channel *amqp.Channel) {
 	c.closureNotificationChannel = channel.NotifyClose(make(chan *amqp.Error))
 
 	c.Channel = channel
-	c.ChannelId++
+	c.ChannelCount++
 }
 
 /*
-Method for maintance of a channel.
+Method for maintenance of a amqp.Channel.
+
+It will close the channel if the RabbitMQConnection signal its closure.
+
+It will stop to maintain the amqp.Channel if the RabbitMQChannel signal its closure.
+
+It will reconnect if receive a signal of dropped connection.
 */
-func (c *Channel) keepChannel() {
+func (c *RabbitMQChannel) keepChannel() {
 	select {
 	case <-c.connection.Context.Done():
-		log.Printf("connection context of channel '%s' id '%d' with connection id '%d' at server '%s' have been closed", c.ChannelName, c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)
+		log.Printf("connection context of channel id %s with connection id %s at server %s have been closed\n", c.ChannelId.String(), c.connection.ConnectionId.String(), c.connection.Env().RABBITMQ_HOST)
 		c.CloseChannel()
 
 	case <-c.Context.Done():
-		log.Printf("channel context of channel '%s'l id '%d' with connection id '%d' at server '%s' have been closed", c.ChannelName, c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)
+		log.Printf("channel context of channel id %s with connection id %s at server %s have been closed\n", c.ChannelId.String(), c.connection.ConnectionId.String(), c.connection.Env().RABBITMQ_HOST)
 		c.Channel.Close()
 
 	case closeNotification := <-c.closureNotificationChannel:
@@ -162,22 +152,22 @@ func (c *Channel) keepChannel() {
 
 		if closeNotification != nil {
 			c.lastChannelError = closeNotification
-			config.Error.New(fmt.Sprintf("channel of channel '%s' id '%d' with connection id '%d' at server '%s' have closed with\nreason: '%s'\nerror: '%s'\nstatus code: '%d'", c.ChannelName, c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress, closeNotification.Reason, closeNotification.Error(), closeNotification.Code)).Print()
+			log.Printf("channel id %s with connection id %s at server %s have closed with\nreason: %s\nerror: %s\nstatus code: %d\n", c.ChannelId.String(), c.connection.ConnectionId.String(), c.connection.Env().RABBITMQ_HOST, closeNotification.Reason, closeNotification.Error(), closeNotification.Code)
 
 		} else {
-			config.Error.New(fmt.Sprintf("connection of channel '%s' id '%d' with connection id '%d' at server '%s' have closed with no specified reason", c.ChannelName, c.ChannelId, c.connection.ConnectionId, c.connection.ServerAddress)).Print()
+			log.Printf("connection of channel id %s with connection id %s at server %s have closed with no specified reason\n", c.ChannelId.String(), c.connection.ConnectionId.String(), c.connection.Env().RABBITMQ_HOST)
 		}
 
 		c.Connect()
 	}
-
-	runtime.Goexit()
 }
 
 /*
-Method for closing the channel via context, sending  signal for all objects sharring channel to terminate its process.
+Method for closing the channel via context.
+
+Keep in mind that this will affect all objects that shares channel with this one.
 */
-func (c *Channel) CloseChannel() {
+func (c *RabbitMQChannel) CloseChannel() {
 	c.isOpen = false
 
 	if c.CancelContext != nil {
@@ -185,28 +175,34 @@ func (c *Channel) CloseChannel() {
 	}
 }
 
-func (c *Channel) CloseConnection() {
+/*
+Method for closing the channel and connection via context.
+
+Keep in mind that this will affect all objects that shares channel or connection with this one, including closing
+other non-shared channels that shares this connection.
+*/
+func (c *RabbitMQChannel) CloseConnection() {
 	c.CloseChannel()
 	c.connection.CloseConnection()
 }
 
 /*
-Check the channel, returning true if its down and unavailble.
+Check the RabbitMQChannel availability.
 */
-func (c *Channel) IsChannelDown() bool {
+func (c *RabbitMQChannel) IsChannelDown() bool {
 	return !c.isOpen
 }
 
 /*
 Block the process until the channel is open.
 */
-func (c *Channel) WaitForChannel() {
+func (c *RabbitMQChannel) WaitForChannel() {
 	for {
 		if c.isOpen {
 			return
 		}
 
-		log.Printf("waiting for rabbitmq channel '%s'\n", c.ChannelName)
+		log.Printf("waiting for rabbitmq channel %s\n", c.ChannelId.String())
 		time.Sleep(500 * time.Millisecond)
 	}
 }

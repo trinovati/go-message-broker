@@ -1,107 +1,102 @@
+// this rabbitmq package is adapting the amqp091-go lib
 package rabbitmq
 
 import (
-	"bytes"
-	"encoding/gob"
+	"context"
 	"fmt"
 	"log"
 	"strconv"
 	"time"
 
+	"github.com/pkg/errors"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/trinovati/go-message-broker/RabbitMQ/config"
-	"github.com/trinovati/go-message-broker/dto"
+	dto_pkg "github.com/trinovati/go-message-broker/dto"
 )
 
-func (rmq *RabbitMQ) ConsumeForever() {
-	if rmq.Consumer == nil {
-		log.Panic(config.Error.New("no consumer behaviour have been staged").String())
-	}
-
-	rmq.Consumer.ConsumeForever()
-}
-
 /*
-Infinite loop consuming the queue linked to the RabbitMQ.ConsumeData object, preparing the data and sending it towards a channel into the system.
+Infinite loop consuming the queue linked to RabbitMQConsumer object.
+It sends the data through channel found in Deliveries() method of RabbitMQConsumer object.
 
 Use only in goroutines, otherwise the system will be forever blocked in the infinite loop trying to push into the channel.
 
-Safe to share amqp.Connection and amqp.Channel for assincronus concurent access.
+It will open a goroutine to keep maintenance of the connection/channel.
+It will open a goroutine as a worker for acknowledges.
 
-In case of the connections and/or channel comes down, it prepres for consuming as soon as the channel is up again.
+In case of the connection/channel comes down, it prepares for consuming as soon as the connection/channel is up again.
 
-CAUTION:
-Keep in mind that if a behaviour other than consumer is staged, it will panic the service.
-Keep in mind that if Publisher is not staged and running, it will panic the service.
+Calling BreakConsume() method will close the nested goroutines and the ConsumeForever will return.
 */
-func (consumer *Consumer) ConsumeForever() {
-	var err error
-	var delivery amqp.Delivery
-	var buffer bytes.Buffer
-	var messageId string
-	var message []byte
+func (consumer *RabbitMQConsumer) ConsumeForever(ctx context.Context) {
+	consumer.consumerCtx, consumer.consumerCancel = context.WithCancel(ctx)
 
-	if consumer.Publisher == nil {
-		log.Panic(config.Error.New("no publisher have been staged for failed messages nack").String())
-	}
-
-	consumeChannelSinalizer := make(chan bool)
+	consumeChannelSignal := make(chan bool)
 	incomingDeliveryChannel, err := consumer.prepareLoopingConsumer()
 	if err != nil {
-		log.Panic(config.Error.Wrap(err, "error preparing consumer queue").String())
+		log.Panic(errors.Wrap(err, "error preparing consumer queue"))
 	}
 
-	go consumer.amqpChannelMonitor(consumeChannelSinalizer)
+	go consumer.amqpChannelMonitor(consumer.consumerCtx, consumeChannelSignal)
+	go consumer.acknowledgeWorker(consumer.consumerCtx)
 
 	for {
 		select {
-		case <-consumeChannelSinalizer:
+		case <-consumeChannelSignal:
 			consumer.channel.WaitForChannel()
 			incomingDeliveryChannel, err = consumer.prepareLoopingConsumer()
 			if err != nil {
-				log.Panic(config.Error.New("error preparing consumer queue").String())
+				log.Panic(errors.New("error preparing consumer queue"))
 			}
 
-			consumeChannelSinalizer <- true
+			consumeChannelSignal <- true
 
-		case delivery = <-incomingDeliveryChannel:
+		case delivery := <-incomingDeliveryChannel:
 			if delivery.Body == nil {
 				continue
 			}
 
-			messageId = strconv.FormatUint(delivery.DeliveryTag, 10)
-
-			buffer.Reset()
-			err = gob.NewEncoder(&buffer).Encode(
-				dto.Message{
-					Id:   messageId,
-					Data: delivery.Body,
-				},
-			)
-			if err != nil {
-				config.Error.Wrap(err, fmt.Sprintf("error encoding gob at channel '%s'", consumer.channel.Name())).Print()
-			}
-
-			message = append([]byte{}, buffer.Bytes()...)
+			messageId := strconv.FormatUint(delivery.DeliveryTag, 10)
 
 			consumer.DeliveryMap.Store(messageId, delivery)
-			consumer.DeliveryChannel <- message
+			consumer.DeliveryChannel <- dto_pkg.BrokerDelivery{
+				Id:           messageId,
+				Header:       delivery.Headers,
+				Body:         delivery.Body,
+				Acknowledger: consumer.AcknowledgeChannel,
+			}
+		case <-consumer.consumerCtx.Done():
+			return
+		}
+	}
+}
+
+func (consumer *RabbitMQConsumer) acknowledgeWorker(ctx context.Context) {
+	for {
+		select {
+		case acknowledge := <-consumer.AcknowledgeChannel:
+			consumer.Acknowledge(acknowledge)
+		case <-ctx.Done():
+			return
 		}
 	}
 }
 
 /*
-Prepare the consumer in case of the channel comming down.
+Prepare the consumer in case of the channel coming down.
 */
-func (consumer *Consumer) amqpChannelMonitor(consumeChannelSinalizer chan bool) {
+func (consumer *RabbitMQConsumer) amqpChannelMonitor(ctx context.Context, consumeChannelSignal chan bool) {
 	for {
-		if consumer.channel.IsChannelDown() || consumer.channel.Connection().IsConnectionDown() {
-			consumeChannelSinalizer <- false
-			<-consumeChannelSinalizer
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			if consumer.channel.IsChannelDown() || consumer.channel.Connection().IsConnectionDown() {
+				consumeChannelSignal <- false
+				<-consumeChannelSignal
 
-		} else {
-			time.Sleep(250 * time.Millisecond)
-			continue
+			} else {
+				time.Sleep(250 * time.Millisecond)
+				continue
+			}
 		}
 	}
 }
@@ -113,27 +108,26 @@ If an error occurs, it will restart and retry all the process until the consumer
 
 Return a channel of incoming deliveries.
 */
-func (consumer *Consumer) prepareLoopingConsumer() (incomingDeliveryChannel <-chan amqp.Delivery, err error) {
-	var tolerance int
-	for tolerance = 0; tolerance >= 5 || consumer.AlwaysRetry; tolerance++ {
+func (consumer *RabbitMQConsumer) prepareLoopingConsumer() (incomingDeliveryChannel <-chan amqp.Delivery, err error) {
+	for tolerance := 0; tolerance >= 5 || consumer.AlwaysRetry; tolerance++ {
 		consumer.channel.WaitForChannel()
 
-		err = consumer.PrepareQueue(nil)
+		err = consumer.PrepareQueue()
 		if err != nil {
-			config.Error.Wrap(err, fmt.Sprintf("error preparing queue at channel '%s'", consumer.channel.Name())).Print()
+			log.Printf("error from channel id %s preparing queue %s: %s\n", consumer.channel.ChannelId.String(), consumer.Queue.Name, err.Error())
 			time.Sleep(time.Second)
 			continue
 		}
 
 		if consumer.channel.IsChannelDown() {
-			config.Error.New(fmt.Sprintf("connection dropped before preparing consume at channel '%s'", consumer.channel.Name())).Print()
+			log.Printf("connection from channel id %s dropped before preparing consume for queue %s\n", consumer.channel.ChannelId.String(), consumer.Queue.Name)
 			time.Sleep(time.Second)
 			continue
 		}
 
-		incomingDeliveryChannel, err = consumer.channel.Access().Consume(consumer.QueueName, "", false, false, false, false, nil)
+		incomingDeliveryChannel, err = consumer.channel.Channel.Consume(consumer.Queue.Name, "", false, false, false, false, nil)
 		if err != nil {
-			config.Error.Wrap(err, fmt.Sprintf("error producing consume channel at channel '%s'", consumer.channel.Name())).Print()
+			log.Printf("error from channel id %s producing consume channel for queue %s: %s\n", consumer.channel.ChannelId.String(), consumer.Queue.Name, err.Error())
 			time.Sleep(time.Second)
 			continue
 		}
@@ -142,7 +136,7 @@ func (consumer *Consumer) prepareLoopingConsumer() (incomingDeliveryChannel <-ch
 	}
 
 	if err == nil {
-		err = config.Error.New(fmt.Sprintf("could not prepare consumer for unknown reason at channel '%s'", consumer.channel.Name()))
+		err = errors.New(fmt.Sprintf("channel id %s could not prepare consumer for unknown reason for queue %s", consumer.channel.ChannelId.String(), consumer.Queue.Name))
 	}
 
 	return nil, err
