@@ -8,13 +8,13 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	dto_pkg "github.com/trinovati/go-message-broker/v2/dto"
+	dto_pkg "github.com/trinovati/go-message-broker/v3/dto"
 )
 
 /*
 Publish into RabbitMQ queue configured at RabbitMQPublisher object.
 */
-func (publisher *RabbitMQPublisher) Publish(publishing  dto_pkg.BrokerPublishing) (err error) {
+func (publisher *RabbitMQPublisher) Publish(publishing dto_pkg.BrokerPublishing) (err error) {
 	var success bool
 	var confirmation *amqp.DeferredConfirmation
 

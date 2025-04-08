@@ -1,8 +1,8 @@
 package interfaces
 
 import (
-	"github.com/trinovati/go-message-broker/v2/RabbitMQ/channel"
-	"github.com/trinovati/go-message-broker/v2/RabbitMQ/connection"
+	"github.com/trinovati/go-message-broker/v3/RabbitMQ/channel"
+	"github.com/trinovati/go-message-broker/v3/RabbitMQ/connection"
 )
 
 /*

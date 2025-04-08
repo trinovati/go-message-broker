@@ -12,11 +12,11 @@ import (
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
-	rabbitmq "github.com/trinovati/go-message-broker/v2/RabbitMQ"
-	"github.com/trinovati/go-message-broker/v2/RabbitMQ/config"
-	rabbitmqdto "github.com/trinovati/go-message-broker/v2/RabbitMQ/dto"
-	"github.com/trinovati/go-message-broker/v2/constants"
-	dto_pkg "github.com/trinovati/go-message-broker/v2/dto"
+	rabbitmq "github.com/trinovati/go-message-broker/v3/RabbitMQ"
+	"github.com/trinovati/go-message-broker/v3/RabbitMQ/config"
+	rabbitmqdto "github.com/trinovati/go-message-broker/v3/RabbitMQ/dto"
+	"github.com/trinovati/go-message-broker/v3/constants"
+	dto_pkg "github.com/trinovati/go-message-broker/v3/dto"
 )
 
 /*
