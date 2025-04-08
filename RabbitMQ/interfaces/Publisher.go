@@ -1,6 +1,6 @@
 package interfaces
 
-import dto_pkg "github.com/trinovati/go-message-broker/dto"
+import dto_pkg "github.com/trinovati/go-message-broker/v2/dto"
 
 /*
 Publisher must implement the basic Behavior for dealing with internal control and implement the

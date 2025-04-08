@@ -8,7 +8,7 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	dto_pkg "github.com/trinovati/go-message-broker/dto"
+	dto_pkg "github.com/trinovati/go-message-broker/v2/dto"
 )
 
 /*
