@@ -444,7 +444,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 }
 
 func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
-	ctx := context.Background()
+
 	log.Printf("testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
 
 	var messages []string = []string{"test001", "test002", "test003"}
@@ -483,7 +483,7 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 
 	deliveryChannel := consumer.Deliveries()
 
-	go consumer.ConsumeForever(ctx)
+	go consumer.ConsumeForever()
 	time.Sleep(time.Second)
 
 	for i, expectedMessage := range messages {
@@ -545,7 +545,7 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 }
 
 func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
-	ctx := context.Background()
+
 	log.Printf("testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
 
 	var messages []string = []string{"test001", "test002"}
@@ -596,7 +596,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 
 	deliveryChannel := consumer.Deliveries()
 
-	go consumer.ConsumeForever(ctx)
+	go consumer.ConsumeForever()
 	time.Sleep(time.Second)
 
 	for _, expectedMessage := range messages {
@@ -731,7 +731,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 }
 
 func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
-	ctx := context.Background()
+
 	log.Printf("testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
 
 	var message string = "test001"
@@ -770,7 +770,7 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 
 	deliveryChannel := consumer.Deliveries()
 
-	go consumer.ConsumeForever(ctx)
+	go consumer.ConsumeForever()
 	time.Sleep(time.Second)
 
 	confirmation, err := consumer.Channel().Channel.PublishWithDeferredConfirmWithContext(

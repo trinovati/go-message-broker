@@ -26,8 +26,8 @@ In case of the connection/channel comes down, it prepares for consuming as soon 
 
 Calling BreakConsume() method will close the nested goroutines and the ConsumeForever will return.
 */
-func (consumer *RabbitMQConsumer) ConsumeForever(ctx context.Context) {
-	consumer.consumerCtx, consumer.consumerCancel = context.WithCancel(ctx)
+func (consumer *RabbitMQConsumer) ConsumeForever() {
+	consumer.consumerCtx, consumer.consumerCancel = context.WithCancel(context.Background())
 
 	consumeChannelSignal := make(chan bool)
 	incomingDeliveryChannel, err := consumer.prepareLoopingConsumer()
