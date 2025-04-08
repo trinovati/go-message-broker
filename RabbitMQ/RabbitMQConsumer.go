@@ -9,12 +9,12 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/trinovati/go-message-broker/v2/RabbitMQ/channel"
-	"github.com/trinovati/go-message-broker/v2/RabbitMQ/config"
-	"github.com/trinovati/go-message-broker/v2/RabbitMQ/connection"
-	"github.com/trinovati/go-message-broker/v2/RabbitMQ/dto"
-	"github.com/trinovati/go-message-broker/v2/RabbitMQ/interfaces"
-	dto_pkg "github.com/trinovati/go-message-broker/v2/dto"
+	"github.com/trinovati/go-message-broker/v3/RabbitMQ/channel"
+	"github.com/trinovati/go-message-broker/v3/RabbitMQ/config"
+	"github.com/trinovati/go-message-broker/v3/RabbitMQ/connection"
+	"github.com/trinovati/go-message-broker/v3/RabbitMQ/dto"
+	"github.com/trinovati/go-message-broker/v3/RabbitMQ/interfaces"
+	dto_pkg "github.com/trinovati/go-message-broker/v3/dto"
 )
 
 /*

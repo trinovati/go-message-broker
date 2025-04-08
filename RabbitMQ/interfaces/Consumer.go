@@ -3,7 +3,7 @@ package interfaces
 import (
 	"context"
 
-	dto_pkg "github.com/trinovati/go-message-broker/v2/dto"
+	dto_pkg "github.com/trinovati/go-message-broker/v3/dto"
 )
 
 /*

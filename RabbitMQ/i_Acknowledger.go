@@ -8,8 +8,8 @@ import (
 	"github.com/pkg/errors"
 	amqp "github.com/rabbitmq/amqp091-go"
 
-	"github.com/trinovati/go-message-broker/v2/constants"
-	dto_pkg "github.com/trinovati/go-message-broker/v2/dto"
+	"github.com/trinovati/go-message-broker/v3/constants"
+	dto_pkg "github.com/trinovati/go-message-broker/v3/dto"
 )
 
 /*
