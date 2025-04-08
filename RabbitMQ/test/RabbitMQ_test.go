@@ -12,11 +12,11 @@ import (
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
-	rabbitmq "github.com/trinovati/bulk_uploader/adapter/message-broker/RabbitMQ"
-	"github.com/trinovati/bulk_uploader/adapter/message-broker/RabbitMQ/config"
-	rabbitmqdto "github.com/trinovati/bulk_uploader/adapter/message-broker/RabbitMQ/dto"
-	"github.com/trinovati/bulk_uploader/adapter/message-broker/pkg/constants"
-	"github.com/trinovati/bulk_uploader/adapter/message-broker/pkg/dto"
+	rabbitmq "github.com/trinovati/go-message-broker/RabbitMQ"
+	"github.com/trinovati/go-message-broker/RabbitMQ/config"
+	rabbitmqdto "github.com/trinovati/go-message-broker/RabbitMQ/dto"
+	"github.com/trinovati/go-message-broker/constants"
+	dto_pkg "github.com/trinovati/go-message-broker/dto"
 )
 
 /*
@@ -397,7 +397,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 		t.Fatalf("error purging the queue: %s", err.Error())
 	}
 
-	var expectedPublishing dto.BrokerPublishing = dto.BrokerPublishing{
+	var expectedPublishing dto_pkg.BrokerPublishing = dto_pkg.BrokerPublishing{
 		Header: map[string]any{
 			"wololo": "walala",
 			"type":   "test",
@@ -444,6 +444,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 }
 
 func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
+	ctx := context.Background()
 	log.Printf("testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
 
 	var messages []string = []string{"test001", "test002", "test003"}
@@ -482,7 +483,7 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 
 	deliveryChannel := consumer.Deliveries()
 
-	go consumer.ConsumeForever()
+	go consumer.ConsumeForever(ctx)
 	time.Sleep(time.Second)
 
 	for i, expectedMessage := range messages {
@@ -521,7 +522,7 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 		}
 
 		err = consumer.Acknowledge(
-			dto.BrokerAcknowledge{
+			dto_pkg.BrokerAcknowledge{
 				MessageId: delivery.Id,
 				Action:    constants.ACKNOWLEDGE_SUCCESS,
 			},
@@ -544,6 +545,7 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 }
 
 func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
+	ctx := context.Background()
 	log.Printf("testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
 
 	var messages []string = []string{"test001", "test002"}
@@ -594,7 +596,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 
 	deliveryChannel := consumer.Deliveries()
 
-	go consumer.ConsumeForever()
+	go consumer.ConsumeForever(ctx)
 	time.Sleep(time.Second)
 
 	for _, expectedMessage := range messages {
@@ -619,9 +621,9 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		}
 	}
 
-	IN CASE OF FAILURE, THE TEST WOULD BLOCK
+	//IN CASE OF FAILURE, THE TEST WOULD BLOCK
 
-	testing success
+	//testing success
 	delivery := <-deliveryChannel
 
 	if messages[0] != string(delivery.Body) {
@@ -636,13 +638,13 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
 	}
 
-	delivery.Acknowledger <- dto.BrokerAcknowledge{
+	delivery.Acknowledger <- dto_pkg.BrokerAcknowledge{
 		MessageId: delivery.Id,
 		Action:    constants.ACKNOWLEDGE_SUCCESS,
 	}
-	testing success
+	//testing success
 
-	testing requeue
+	//testing requeue
 	delivery = <-deliveryChannel
 
 	if messages[1] != string(delivery.Body) {
@@ -657,13 +659,13 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
 	}
 
-	delivery.Acknowledger <- dto.BrokerAcknowledge{
+	delivery.Acknowledger <- dto_pkg.BrokerAcknowledge{
 		MessageId: delivery.Id,
 		Action:    constants.ACKNOWLEDGE_REQUEUE,
 	}
-	testing requeue
+	//testing requeue
 
-	testing deadletter
+	//testing deadletter
 	delivery = <-deliveryChannel
 
 	if messages[1] != string(delivery.Body) {
@@ -678,10 +680,10 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
 	}
 
-	delivery.Acknowledger <- dto.BrokerAcknowledge{
+	delivery.Acknowledger <- dto_pkg.BrokerAcknowledge{
 		MessageId: delivery.Id,
 		Action:    constants.ACKNOWLEDGE_DEADLETTER,
-		Report: dto.BrokerPublishing{
+		Report: dto_pkg.BrokerPublishing{
 			Header: delivery.Header,
 			Body:   delivery.Body,
 		},
@@ -710,7 +712,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	if reflect.DeepEqual(expectedDeadletterHeader, deliveryHeader) == false {
 		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedDeadletterHeader, deliveryHeader)
 	}
-	testing deadletter
+	//testing deadletter
 
 	time.Sleep(time.Second)
 	err = deleteQueueAndExchange(consumer.Channel().Channel, queue.Name, queue.Exchange, "doit")
@@ -729,6 +731,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 }
 
 func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
+	ctx := context.Background()
 	log.Printf("testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
 
 	var message string = "test001"
@@ -767,7 +770,7 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 
 	deliveryChannel := consumer.Deliveries()
 
-	go consumer.ConsumeForever()
+	go consumer.ConsumeForever(ctx)
 	time.Sleep(time.Second)
 
 	confirmation, err := consumer.Channel().Channel.PublishWithDeferredConfirmWithContext(
@@ -804,10 +807,10 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
 	}
 
-	consumer.Acknowledge(dto.BrokerAcknowledge{
+	consumer.Acknowledge(dto_pkg.BrokerAcknowledge{
 		MessageId: delivery.Id,
 		Action:    constants.ACKNOWLEDGE_DEADLETTER,
-		Report: dto.BrokerPublishing{
+		Report: dto_pkg.BrokerPublishing{
 			Header: delivery.Header,
 			Body:   delivery.Body,
 		},
