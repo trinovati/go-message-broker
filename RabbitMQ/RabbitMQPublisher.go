@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/trinovati/go-message-broker/RabbitMQ/channel"
-	"github.com/trinovati/go-message-broker/RabbitMQ/config"
-	"github.com/trinovati/go-message-broker/RabbitMQ/connection"
-	"github.com/trinovati/go-message-broker/RabbitMQ/dto"
-	"github.com/trinovati/go-message-broker/RabbitMQ/interfaces"
+	"github.com/trinovati/go-message-broker/v2/RabbitMQ/channel"
+	"github.com/trinovati/go-message-broker/v2/RabbitMQ/config"
+	"github.com/trinovati/go-message-broker/v2/RabbitMQ/connection"
+	"github.com/trinovati/go-message-broker/v2/RabbitMQ/dto"
+	"github.com/trinovati/go-message-broker/v2/RabbitMQ/interfaces"
 )
 
 /*

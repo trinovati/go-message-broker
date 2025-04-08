@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/trinovati/go-message-broker/RabbitMQ/config"
-	"github.com/trinovati/go-message-broker/RabbitMQ/connection"
+	"github.com/trinovati/go-message-broker/v2/RabbitMQ/config"
+	"github.com/trinovati/go-message-broker/v2/RabbitMQ/connection"
 )
 
 /*
