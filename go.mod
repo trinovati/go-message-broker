@@ -1,4 +1,4 @@
-module github.com/trinovati/go-message-broker
+module github.com/trinovati/go-message-broker/v2
 
 go 1.24.0
 
