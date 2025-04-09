@@ -1,8 +1,9 @@
-module gitlab.com/aplicacao/trinovati-connector-message-brokers/v2
+module github.com/trinovati/go-message-broker/v3
 
-go 1.23.3
+go 1.24.0
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/pkg/errors v0.9.1
 	github.com/rabbitmq/amqp091-go v1.9.0
 )

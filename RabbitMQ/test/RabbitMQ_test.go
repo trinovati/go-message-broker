@@ -1,553 +1,828 @@
 package testing
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
+	"encoding/json"
+	"errors"
 	"log"
 	"reflect"
 	"strconv"
 	"testing"
 	"time"
 
-	rabbitmq "gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/channel"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/connection"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/dto"
-
 	amqp "github.com/rabbitmq/amqp091-go"
+
+	rabbitmq "github.com/trinovati/go-message-broker/v3/RabbitMQ"
+	"github.com/trinovati/go-message-broker/v3/RabbitMQ/config"
+	rabbitmqdto "github.com/trinovati/go-message-broker/v3/RabbitMQ/dto"
+	"github.com/trinovati/go-message-broker/v3/constants"
+	dto_pkg "github.com/trinovati/go-message-broker/v3/dto"
 )
 
+/*
+UNSAFE!!!
+FOR TEST PURPOSES ONLY!!!
+
+Delete a queue and a exchange.
+safePassword asserts that you're sure of it.
+*/
+func deleteQueueAndExchange(channel *amqp.Channel, queueName string, exchangeName string, safePassword string) (err error) {
+	if safePassword == "doit" {
+		_, err = channel.QueueDelete(queueName, false, false, false)
+		if err != nil {
+			return errors.New("can't delete queue: " + err.Error())
+		}
+
+		err = channel.ExchangeDelete(exchangeName, false, false)
+		if err != nil {
+			return errors.New("can't delete exchange: " + err.Error())
+		}
+
+	} else {
+		return errors.New("can't delete: you seem not sure of it")
+	}
+
+	return nil
+}
+
 func TestConnectionRabbitMQ(t *testing.T) {
-	log.Printf("\ntesting Connection for RabbitMQ\n\n")
+	log.Printf("testing Connection for RabbitMQ\n\n")
 
-	messageBroker := rabbitmq.NewRabbitMQ().Behave(
-		rabbitmq.NewPublisher(
-			"test",
-			"",
-			"",
-			"",
-			"",
-		),
-	).Behave(
-		rabbitmq.NewConsumer(
-			"test",
-			nil,
-			"",
-			"",
-			"",
-			"",
-			0,
-			false,
-		),
-	).Connect()
-
-	if messageBroker.Publisher.Channel().Connection().(*connection.Connection).ConnectionId != 1 {
-		t.Error("error at publisher Connection id.\nexpected: " + strconv.Itoa(1) + "\ngot:      " + strconv.FormatUint(messageBroker.Publisher.Channel().Connection().(*connection.Connection).ConnectionId, 10))
-	}
-	if messageBroker.Consumer.Channel().Connection().(*connection.Connection).ConnectionId != 1 {
-		t.Error("error at consumer Connection id.\nexpected: " + strconv.Itoa(1) + "\ngot:      " + strconv.FormatUint(messageBroker.Consumer.Channel().Connection().(*connection.Connection).ConnectionId, 10))
+	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
+		RABBITMQ_PROTOCOL: "amqp",
+		RABBITMQ_HOST:     "localhost",
+		RABBITMQ_PORT:     "5672",
+		RABBITMQ_USERNAME: "guest",
+		RABBITMQ_PASSWORD: "guest",
 	}
 
-	if messageBroker.Publisher.Channel().Connection().IsConnectionDown() {
-		t.Error("error at publisher Connection.IsConnectionDown, connection should be up")
-	}
-	if messageBroker.Consumer.Channel().Connection().IsConnectionDown() {
-		t.Error("error at consumer Connection.IsConnectionDown, connection should be up")
+	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+		Exchange:     "",
+		ExchangeType: "",
+		Name:         "",
+		AccessKey:    "",
+		Qos:          1,
+		Purge:        true,
 	}
 
-	messageBroker.Publisher.Channel().Connection().(*connection.Connection).Connection.Close()
-	messageBroker.Consumer.Channel().Connection().(*connection.Connection).Connection.Close()
+	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		env,
+		"test",
+		nil,
+		queue,
+	)
+
+	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		env,
+		"test",
+		queue,
+	)
+
+	consumer.Connect()
+	publisher.Connect()
+
+	if consumer.Channel().Connection().ConnectionCount != 1 {
+		t.Fatalf("error at consumer connection count.\nexpected: %d\ngot:      %d", 1, consumer.Channel().Connection().ConnectionId)
+	}
+	if publisher.Channel().Connection().ConnectionCount != 1 {
+		t.Fatalf("error at publisher connection count.\nexpected: %d\ngot:      %d", 1, publisher.Channel().Connection().ConnectionId)
+	}
+
+	if consumer.Channel().Connection().IsConnectionDown() {
+		t.Fatalf("connection should be up")
+	}
+	if publisher.Channel().Connection().IsConnectionDown() {
+		t.Fatalf("connection should be up")
+	}
+
+	consumer.Channel().Connection().Connection.Close()
+	publisher.Channel().Connection().Connection.Close()
 
 	time.Sleep(500 * time.Millisecond)
 
-	messageBroker.Publisher.Channel().Connection().WaitForConnection()
-	messageBroker.Consumer.Channel().Connection().WaitForConnection()
+	consumer.Channel().Connection().WaitForConnection()
+	publisher.Channel().Connection().WaitForConnection()
 
-	if messageBroker.Publisher.Channel().Connection().(*connection.Connection).ConnectionId != 2 {
-		t.Error("error at publisher connection id.\nexpected: " + strconv.Itoa(2) + "\ngot:      " + strconv.FormatUint(messageBroker.Publisher.Channel().Connection().(*connection.Connection).ConnectionId, 10))
+	if consumer.Channel().Connection().ConnectionCount != 2 {
+		t.Fatalf("error at consumer connection count.\nexpected: %d\ngot:      %d", 2, consumer.Channel().Connection().ConnectionCount)
 	}
-	if messageBroker.Consumer.Channel().Connection().(*connection.Connection).ConnectionId != 2 {
-		t.Error("error at consumer connection id.\nexpected: " + strconv.Itoa(2) + "\ngot:      " + strconv.FormatUint(messageBroker.Consumer.Channel().Connection().(*connection.Connection).ConnectionId, 10))
+	if publisher.Channel().Connection().ConnectionCount != 2 {
+		t.Fatalf("error at publisher connection count.\nexpected: %d\ngot:      %d", 2, publisher.Channel().Connection().ConnectionCount)
 	}
 
 	time.Sleep(time.Second)
-	messageBroker.CloseConnection()
+	consumer.CloseConnection()
+	publisher.CloseConnection()
 	time.Sleep(time.Second)
 
-	if !messageBroker.Publisher.Channel().Connection().IsConnectionDown() {
-		t.Error("error at IsConnectionDown, connection should be down")
+	if !consumer.Channel().Connection().IsConnectionDown() {
+		t.Error("consumer connection should be down")
+	}
+	if !publisher.Channel().Connection().IsConnectionDown() {
+		t.Error("publisher connection should be down")
 	}
 
-	if !messageBroker.Consumer.Channel().Connection().IsConnectionDown() {
-		t.Error("error at IsConnectionDown, connection should be down")
+	if !consumer.Channel().IsChannelDown() {
+		t.Error("consumer channel should be down")
+	}
+	if !publisher.Channel().IsChannelDown() {
+		t.Error("publisher channel should be down")
 	}
 
-	if !messageBroker.Publisher.Channel().IsChannelDown() {
-		t.Error("error at IsChannelDown, channel should be down")
-	}
-
-	if !messageBroker.Consumer.Channel().IsChannelDown() {
-		t.Error("error at IsChannelDown, channel should be down")
-	}
-
-	log.Printf("\nfinishing testing Connection for RabbitMQ\n\n\n")
+	log.Printf("finishing testing Connection for RabbitMQ\n\n")
 }
 
 func TestChannelRabbitMQ(t *testing.T) {
-	log.Printf("\ntesting Channel for RabbitMQ\n\n")
+	log.Printf("testing Channel for RabbitMQ\n\n")
 
-	messageBroker := rabbitmq.NewRabbitMQ().Behave(
-		rabbitmq.NewPublisher(
-			"test",
-			"",
-			"",
-			"",
-			"",
-		),
-	).Behave(
-		rabbitmq.NewConsumer(
-			"test",
-			nil,
-			"",
-			"",
-			"",
-			"",
-			0,
-			false,
-		),
-	).Connect()
-
-	if messageBroker.Publisher.Channel().(*channel.Channel).ChannelId != 1 {
-		t.Error("error at Channel id.\nexpected: " + strconv.Itoa(1) + "\ngot:      " + strconv.FormatUint(messageBroker.Publisher.Channel().(*channel.Channel).ChannelId, 10))
+	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
+		RABBITMQ_PROTOCOL: "amqp",
+		RABBITMQ_HOST:     "localhost",
+		RABBITMQ_PORT:     "5672",
+		RABBITMQ_USERNAME: "guest",
+		RABBITMQ_PASSWORD: "guest",
 	}
 
-	if messageBroker.Consumer.Channel().(*channel.Channel).ChannelId != 1 {
-		t.Error("error at BehaviourType.\nexpected: " + strconv.Itoa(1) + "\ngot:      " + strconv.FormatUint(messageBroker.Consumer.Channel().(*channel.Channel).ChannelId, 10))
+	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+		Exchange:     "",
+		ExchangeType: "",
+		Name:         "",
+		AccessKey:    "",
+		Qos:          1,
+		Purge:        true,
 	}
 
-	if messageBroker.Publisher.Channel().IsChannelDown() {
-		t.Error("error at IsChannelDown, channel should be up")
+	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		env,
+		"test",
+		nil,
+		queue,
+	)
+
+	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		env,
+		"test",
+		queue,
+	)
+
+	consumer.Connect()
+	publisher.Connect()
+
+	if consumer.Channel().ChannelCount != 1 {
+		t.Fatalf("error at consumer channel.\nexpected: %d\ngot:      %d", 1, consumer.Channel().ChannelCount)
+	}
+	if publisher.Channel().ChannelCount != 1 {
+		t.Fatalf("error at publisher channel.\nexpected: %d\ngot:      %d", 1, publisher.Channel().ChannelCount)
 	}
 
-	if messageBroker.Consumer.Channel().IsChannelDown() {
-		t.Error("error at IsChannelDown, channel should be up")
+	if consumer.Channel().IsChannelDown() {
+		t.Fatalf("consumer channel should be up")
+	}
+	if publisher.Channel().IsChannelDown() {
+		t.Fatalf("publisher channel should be up")
 	}
 
-	messageBroker.Publisher.Channel().(*channel.Channel).Channel.Close()
-	messageBroker.Consumer.Channel().(*channel.Channel).Channel.Close()
+	publisher.Channel().Channel.Close()
+	consumer.Channel().Channel.Close()
 
-	messageBroker.Publisher.Channel().WaitForChannel()
-	if messageBroker.Publisher.Channel().(*channel.Channel).ChannelId != 2 {
-		t.Error("error at Channel id.\nexpected: " + strconv.Itoa(2) + "\ngot:      " + strconv.FormatUint(messageBroker.Publisher.Channel().(*channel.Channel).ChannelId, 10))
+	consumer.Channel().WaitForChannel()
+	publisher.Channel().WaitForChannel()
+
+	if consumer.Channel().ChannelCount != 2 {
+		t.Fatalf("error at consumer channel count.\nexpected: %d\ngot:      %d", 2, consumer.Channel().ChannelCount)
+	}
+	if publisher.Channel().ChannelCount != 2 {
+		t.Fatalf("error at publisher channel count.\nexpected: %d\ngot:      %d", 2, publisher.Channel().ChannelCount)
 	}
 
-	messageBroker.Consumer.Channel().WaitForChannel()
-	if messageBroker.Consumer.Channel().(*channel.Channel).ChannelId != 2 {
-		t.Error("error at IsChannelDown.\nexpected: " + strconv.Itoa(2) + "\ngot:      " + strconv.FormatUint(messageBroker.Consumer.Channel().(*channel.Channel).ChannelId, 10))
-	}
-
-	messageBroker.CloseChannel()
+	consumer.CloseChannel()
+	publisher.CloseChannel()
 	time.Sleep(time.Second)
 
-	if !messageBroker.Publisher.Channel().IsChannelDown() {
-		t.Error("error at IsChannelDown, channel should be down")
+	if !consumer.Channel().IsChannelDown() {
+		t.Error("consumer channel should be down")
+	}
+	if !publisher.Channel().IsChannelDown() {
+		t.Error("publisher channel should be down")
 	}
 
-	if !messageBroker.Consumer.Channel().IsChannelDown() {
-		t.Error("error at IsChannelDown, channel should be down")
-	}
-
-	messageBroker.CloseConnection()
+	consumer.CloseConnection()
+	publisher.CloseConnection()
 	time.Sleep(time.Second)
 
-	log.Printf("\nfinishing testing Channel for RabbitMQ\n\n\n")
+	log.Printf("finishing testing Channel for RabbitMQ\n\n")
 }
 
 func TestShareConnectionRabbitMQ(t *testing.T) {
-	log.Printf("\ntesting ShareConnection for RabbitMQ\n\n")
+	log.Printf("testing ShareConnection for RabbitMQ\n\n")
 
-	messageBroker := rabbitmq.NewRabbitMQ().Behave(
-		rabbitmq.NewPublisher(
-			"test",
-			"",
-			"",
-			"",
-			"",
-		),
-	).Behave(
-		rabbitmq.NewConsumer(
-			"test",
-			nil,
-			"",
-			"",
-			"",
-			"",
-			0,
-			false,
-		),
-	).Connect()
+	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
+		RABBITMQ_PROTOCOL: "amqp",
+		RABBITMQ_HOST:     "localhost",
+		RABBITMQ_PORT:     "5672",
+		RABBITMQ_USERNAME: "guest",
+		RABBITMQ_PASSWORD: "guest",
+	}
 
-	newMessageBroker := rabbitmq.NewRabbitMQ().Behave(
-		rabbitmq.NewPublisher(
-			"test",
-			"",
-			"",
-			"",
-			"",
-		),
-	).Behave(
-		rabbitmq.NewConsumer(
-			"test",
-			nil,
-			"",
-			"",
-			"",
-			"",
-			0,
-			false,
-		),
+	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+		Exchange:     "",
+		ExchangeType: "",
+		Name:         "",
+		AccessKey:    "",
+		Qos:          1,
+		Purge:        true,
+	}
+
+	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		env,
+		"test",
+		nil,
+		queue,
 	)
 
-	newMessageBroker.Publisher.ShareConnection(messageBroker.Publisher)
-	newMessageBroker.Consumer.ShareConnection(messageBroker.Consumer)
+	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		env,
+		"test",
+		queue,
+	)
 
-	if reflect.DeepEqual(messageBroker.Publisher.Channel().Connection(), newMessageBroker.Publisher.Channel().Connection()) == false {
-		t.Errorf("error with Movimentation\nexpected: %+v\ngot:      %+v", messageBroker.Publisher.Channel().Connection(), newMessageBroker.Publisher.Channel().Connection())
+	publisher.ShareConnection(consumer)
+
+	consumer.Connect()
+	publisher.Connect()
+
+	if consumer.Channel().Connection().IsConnectionDown() {
+		t.Fatalf("connection should be up")
+	}
+	if publisher.Channel().Connection().IsConnectionDown() {
+		t.Fatalf("connection should be up")
 	}
 
-	if reflect.DeepEqual(messageBroker.Consumer.Channel().Connection(), newMessageBroker.Consumer.Channel().Connection()) == false {
-		t.Errorf("error with Movimentation\nexpected: %+v\ngot:      %+v", messageBroker.Consumer.Channel().Connection(), newMessageBroker.Consumer.Channel().Connection())
+	if reflect.DeepEqual(publisher.Channel().Connection(), consumer.Channel().Connection()) == false {
+		t.Fatalf("error with shared connections\nexpected: %+v\ngot:      %+v", publisher.Channel().Connection(), consumer.Channel().Connection())
 	}
 
-	messageBroker.CloseConnection()
+	if reflect.DeepEqual(publisher.Channel(), consumer.Channel()) == true {
+		t.Fatalf("should not share channels\n")
+	}
+
+	consumer.CloseConnection()
 	time.Sleep(time.Second)
 
-	log.Printf("\nfinishing testing ShareConnection for RabbitMQ\n\n\n")
+	if !consumer.Channel().Connection().IsConnectionDown() {
+		t.Error("consumer connection should be down")
+	}
+	if !publisher.Channel().Connection().IsConnectionDown() {
+		t.Error("publisher connection should be down")
+	}
+
+	if !consumer.Channel().IsChannelDown() {
+		t.Error("consumer channel should be down")
+	}
+	if !publisher.Channel().IsChannelDown() {
+		t.Error("publisher channel should be down")
+	}
+
+	log.Printf("finishing testing ShareConnection for RabbitMQ\n\n")
 }
 
 func TestShareChannelRabbitMQ(t *testing.T) {
-	log.Printf("\ntesting ShareChannel for RabbitMQ\n\n")
+	log.Printf("testing ShareChannel for RabbitMQ\n\n")
 
-	messageBroker := rabbitmq.NewRabbitMQ().Behave(
-		rabbitmq.NewPublisher(
-			"test",
-			"",
-			"",
-			"",
-			"",
-		),
-	).Behave(
-		rabbitmq.NewConsumer(
-			"test",
-			nil,
-			"",
-			"",
-			"",
-			"",
-			0,
-			false,
-		),
-	).Connect()
+	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
+		RABBITMQ_PROTOCOL: "amqp",
+		RABBITMQ_HOST:     "localhost",
+		RABBITMQ_PORT:     "5672",
+		RABBITMQ_USERNAME: "guest",
+		RABBITMQ_PASSWORD: "guest",
+	}
 
-	newMessageBroker := rabbitmq.NewRabbitMQ().Behave(
-		rabbitmq.NewPublisher(
-			"test",
-			"",
-			"",
-			"",
-			"",
-		),
-	).Behave(
-		rabbitmq.NewConsumer(
-			"test",
-			nil,
-			"",
-			"",
-			"",
-			"",
-			0,
-			false,
-		),
+	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+		Exchange:     "",
+		ExchangeType: "",
+		Name:         "",
+		AccessKey:    "",
+		Qos:          1,
+		Purge:        true,
+	}
+
+	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		env,
+		"test",
+		nil,
+		queue,
 	)
 
-	newMessageBroker.Publisher.ShareChannel(messageBroker.Publisher)
-	newMessageBroker.Consumer.ShareChannel(messageBroker.Consumer)
+	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		env,
+		"test",
+		queue,
+	)
 
-	if reflect.DeepEqual(messageBroker.Publisher.Channel(), newMessageBroker.Publisher.Channel()) == false {
-		t.Errorf("error with Movimentation\nexpected: %+v\ngot:      %+v", messageBroker.Publisher.Channel().Connection(), newMessageBroker.Publisher.Channel())
+	publisher.ShareChannel(consumer)
+	consumer.Connect()
+
+	if consumer.Channel().Connection().IsConnectionDown() {
+		t.Fatalf("connection should be up")
+	}
+	if publisher.Channel().Connection().IsConnectionDown() {
+		t.Fatalf("connection should be up")
 	}
 
-	if reflect.DeepEqual(messageBroker.Consumer.Channel(), newMessageBroker.Consumer.Channel()) == false {
-		t.Errorf("error with Movimentation\nexpected: %+v\ngot:      %+v", messageBroker.Consumer.Channel(), newMessageBroker.Consumer.Channel())
+	if consumer.Channel().IsChannelDown() {
+		t.Fatalf("channel should be up")
+	}
+	if publisher.Channel().IsChannelDown() {
+		t.Fatalf("channel should be up")
 	}
 
-	messageBroker.CloseConnection()
+	if reflect.DeepEqual(publisher.Channel().Connection(), consumer.Channel().Connection()) == false {
+		t.Fatalf("error with shared connections\nexpected: %+v\ngot:      %+v", publisher.Channel().Connection(), consumer.Channel().Connection())
+	}
+
+	if reflect.DeepEqual(publisher.Channel(), consumer.Channel()) == false {
+		t.Fatalf("error with shared channels\nexpected: %+v\ngot:      %+v", publisher.Channel(), consumer.Channel())
+	}
+
+	consumer.CloseConnection()
 	time.Sleep(time.Second)
 
-	log.Printf("\nfinishing testing ShareChannel for RabbitMQ\n\n\n")
+	if !consumer.Channel().Connection().IsConnectionDown() {
+		t.Fatalf("connection should be down")
+	}
+	if !publisher.Channel().Connection().IsConnectionDown() {
+		t.Fatalf("connection should be down")
+	}
+
+	if !consumer.Channel().IsChannelDown() {
+		t.Fatalf("channel should be down")
+	}
+	if !publisher.Channel().IsChannelDown() {
+		t.Fatalf("channel should be down")
+	}
+
+	log.Printf("finishing testing ShareChannel for RabbitMQ\n\n")
 }
 
 func TestPublishRabbitMQ(t *testing.T) {
-	log.Print("\nfinishing testing Publish for RabbitMQ\n\n")
+	log.Print("testing Publish for RabbitMQ\n\n")
 
-	var err error
-
-	var expectedMessage string = "teste001"
-
-	var gobTarget bytes.Buffer
-	var target dto.Target
-
-	var exchangeName string = "tests"
-	var exchangeType string = "direct"
-	var queueName string = exchangeName + "__Publish()"
-	var accessKey string = queueName
-
-	target = dto.Target{
-		Exchange:     exchangeName,
-		ExchangeType: accessKey,
-		Queue:        queueName,
-		AccessKey:    accessKey,
+	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
+		RABBITMQ_PROTOCOL: "amqp",
+		RABBITMQ_HOST:     "localhost",
+		RABBITMQ_PORT:     "5672",
+		RABBITMQ_USERNAME: "guest",
+		RABBITMQ_PASSWORD: "guest",
 	}
 
-	err = gob.NewEncoder(&gobTarget).Encode(target)
+	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+		Exchange:     "test",
+		ExchangeType: "direct",
+		Name:         "adapter_test",
+		AccessKey:    "adapter_test",
+	}
+
+	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		env,
+		"test",
+		queue,
+	)
+
+	publisher.Connect()
+
+	publisher.PrepareQueue()
+
+	_, err := publisher.Channel().Channel.QueuePurge(queue.Name, true)
 	if err != nil {
-		t.Fatal("error encoding gob: " + err.Error())
+		t.Fatalf("error purging the queue: %s", err.Error())
 	}
 
-	messageBroker := rabbitmq.NewRabbitMQ().Behave(
-		rabbitmq.NewPublisher(
-			"test",
-			exchangeName,
-			exchangeType,
-			queueName,
-			accessKey,
-		),
-	).Connect()
-
-	messageBroker.Publisher.PrepareQueue(nil)
-
-	_, err = messageBroker.Publisher.Channel().(*channel.Channel).Channel.QueuePurge(queueName, true)
+	var expectedPublishing dto_pkg.BrokerPublishing = dto_pkg.BrokerPublishing{
+		Header: map[string]any{
+			"wololo": "walala",
+			"type":   "test",
+		},
+		Body: []byte("payload"),
+	}
+	expectedHeader, err := json.Marshal(expectedPublishing.Header)
 	if err != nil {
-		t.Error("error purging the queue: " + err.Error())
+		t.Fatalf("failed to marshall expected header json: %s", err.Error())
 	}
 
-	err = messageBroker.Publisher.(*rabbitmq.Publisher).Publish([]byte(expectedMessage), nil)
+	err = publisher.Publish(expectedPublishing)
 	if err != nil {
-		t.Error("error publishing to queue: " + err.Error())
+		t.Fatalf("error publishing to queue: %s", err.Error())
 	}
 
-	recievedMessage, _, err := messageBroker.Publisher.Channel().Access().Get(queueName, true)
+	delivery, _, err := publisher.Channel().Channel.Get(queue.Name, true)
 	if err != nil {
-		t.Error("error consuming message: " + err.Error())
+		t.Fatalf("error consuming message: %s", err.Error())
 	}
 
-	if string(recievedMessage.Body) != expectedMessage {
-		t.Error("error at with message body.\nexpected: " + expectedMessage + "\ngot:      " + string(recievedMessage.Body))
+	if string(expectedPublishing.Body) != string(delivery.Body) {
+		t.Fatalf("error at body.\nexpected: %s\ngot:      %s", string(expectedPublishing.Body), string(delivery.Body))
 	}
 
-	err = messageBroker.Publisher.(*rabbitmq.Publisher).Publish([]byte(expectedMessage), gobTarget.Bytes())
+	deliveryHeader, err := json.Marshal(delivery.Headers)
 	if err != nil {
-		t.Error("error publishing to queue: " + err.Error())
+		t.Fatalf("failed to marshall expected header json: %s", err.Error())
 	}
 
-	recievedMessage, _, err = messageBroker.Publisher.Channel().Access().Get(queueName, true)
-	if err != nil {
-		t.Error("error consuming message: " + err.Error())
+	if reflect.DeepEqual(expectedHeader, deliveryHeader) == false {
+		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedPublishing.Header, delivery.Headers)
 	}
 
-	if string(recievedMessage.Body) != expectedMessage {
-		t.Error("error at with message body.\nexpected: " + expectedMessage + "\ngot:      " + string(recievedMessage.Body))
-	}
-
-	err = rabbitmq.DeleteQueueAndExchange(messageBroker.Publisher.Channel().Access(), queueName, exchangeName, "doit")
+	err = deleteQueueAndExchange(publisher.Channel().Channel, queue.Name, queue.Exchange, "doit")
 	if err != nil {
 		t.Error("error deleting queue: " + err.Error())
 	}
 
-	messageBroker.CloseConnection()
+	publisher.CloseConnection()
 	time.Sleep(time.Second)
 
-	log.Printf("\nfinishing testing Publish for RabbitMQ\n\n\n")
+	log.Printf("finishing testing Publish for RabbitMQ\n\n")
 }
 
-func TestPersistRabbitMQ(t *testing.T) {
-	log.Printf("\ntesting Persist for RabbitMQ\n\n")
+func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
+	ctx := context.Background()
+	log.Printf("testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
 
-	var err error
-
-	var expectedMessage string = "teste"
-
-	var gobTarget bytes.Buffer
-	var target dto.Target
-
-	var exchangeName string = "tests"
-	var exchangeType string = "direct"
-	var queueName string = exchangeName + "__Persist()"
-	var accessKey string = queueName
-
-	target = dto.Target{
-		Exchange:     exchangeName,
-		ExchangeType: accessKey,
-		Queue:        queueName,
-		AccessKey:    accessKey,
+	var messages []string = []string{"test001", "test002", "test003"}
+	var expectedHeader map[string]any = map[string]any{
+		"wololo": "walala",
+		"type":   "test",
 	}
 
-	err = gob.NewEncoder(&gobTarget).Encode(target)
-	if err != nil {
-		t.Fatal("error encoding gob: " + err.Error())
+	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
+		RABBITMQ_PROTOCOL: "amqp",
+		RABBITMQ_HOST:     "localhost",
+		RABBITMQ_PORT:     "5672",
+		RABBITMQ_USERNAME: "guest",
+		RABBITMQ_PASSWORD: "guest",
 	}
 
-	messageBroker := rabbitmq.NewRabbitMQ().Behave(
-		rabbitmq.NewPublisher(
-			"test",
-			exchangeName,
-			exchangeType,
-			queueName,
-			accessKey,
-		),
-	).Connect()
-
-	err = messageBroker.Publisher.PrepareQueue(nil)
-	if err != nil {
-		t.Fatal("error preparing queue: " + err.Error())
+	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+		Exchange:     "test",
+		ExchangeType: "direct",
+		Name:         "adapter_test",
+		AccessKey:    "adapter_test",
+		Qos:          1,
+		Purge:        true,
 	}
 
-	err = messageBroker.Persist([]byte(expectedMessage), nil)
-	if err != nil {
-		t.Fatal("error persisting data: " + err.Error())
-	}
+	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		env,
+		"test",
+		nil,
+		queue,
+	)
 
-	delivery, _, err := messageBroker.Publisher.(*rabbitmq.Publisher).Channel().Access().Get(queueName, true)
-	if err != nil {
-		t.Error("error consuming message: " + err.Error())
-	}
+	consumer.Connect()
 
-	if string(delivery.Body) != expectedMessage {
-		t.Error("error persisting data.\nexpected: " + expectedMessage + "\ngot:      " + string(delivery.Body))
-	}
+	consumer.PrepareQueue()
 
-	err = messageBroker.Persist([]byte(expectedMessage), gobTarget.Bytes())
-	if err != nil {
-		t.Fatal("error persisting data: " + err.Error())
-	}
+	deliveryChannel := consumer.Deliveries()
 
-	delivery, _, err = messageBroker.Publisher.(*rabbitmq.Publisher).Channel().Access().Get(queueName, true)
-	if err != nil {
-		t.Error("error consuming message: " + err.Error())
-	}
-
-	if string(delivery.Body) != expectedMessage {
-		t.Error("error persisting data.\nexpected: " + expectedMessage + "\ngot:      " + string(delivery.Body))
-	}
-
-	err = rabbitmq.DeleteQueueAndExchange(messageBroker.Publisher.(*rabbitmq.Publisher).Channel().Access(), queueName, exchangeName, "doit")
-	if err != nil {
-		t.Error("error deleting queue and exchange: " + err.Error())
-	}
-
-	messageBroker.CloseConnection()
-	time.Sleep(time.Second)
-
-	log.Printf("\nfinishing testing Persist for RabbitMQ\n\n\n")
-}
-
-func TestConsumeForeverRabbitMQ(t *testing.T) {
-	log.Printf("\ntesting ConsumeForever for RabbitMQ\n\n")
-
-	var messages []string
-	messages = append(messages, "teste001", "teste002", "teste003")
-
-	var buffer bytes.Buffer
-	var message dto.Message
-	var acknowledge dto.Acknowledge
-	var delivery []byte
-
-	exchangeName := "tests"
-	exchangeType := "direct"
-	queueName := exchangeName + "__ConsumeForever()"
-	accessKey := queueName
-	qos := 0
-	purgeBeforeStarting := true
-	var deliveryChannel chan []byte
-
-	messageBroker := rabbitmq.NewRabbitMQ().Behave(
-		rabbitmq.NewConsumer(
-			"test",
-			nil,
-			exchangeName,
-			exchangeType,
-			queueName,
-			accessKey,
-			qos,
-			purgeBeforeStarting,
-		),
-	).Connect()
-
-	deliveryChannel = messageBroker.DeliveryChannel()
-
-	go messageBroker.ConsumeForever()
+	go consumer.ConsumeForever(ctx)
 	time.Sleep(time.Second)
 
 	for i, expectedMessage := range messages {
-		confirmation, err := messageBroker.Consumer.Channel().Access().PublishWithDeferredConfirmWithContext(context.Background(), exchangeName, accessKey, true, false, amqp.Publishing{Body: []byte(expectedMessage)})
+		confirmation, err := consumer.Channel().Channel.PublishWithDeferredConfirmWithContext(
+			context.Background(),
+			queue.Exchange,
+			queue.AccessKey,
+			true,
+			false,
+			amqp.Publishing{
+				Body:    []byte(expectedMessage),
+				Headers: expectedHeader,
+			},
+		)
 		if err != nil {
-			t.Error("error publishing message to RabbitMQ: " + err.Error())
+			t.Fatalf("error publishing message to RabbitMQ: %s", err.Error())
 		}
 
 		success := confirmation.Wait()
 		if !success {
-			t.Error("Publishing confirmation failed on queue '" + queueName + "' with delivery TAG '" + strconv.FormatUint(confirmation.DeliveryTag, 10) + "'.")
+			t.Fatalf("publishing confirmation failed on queue %s with delivery TAG %d", queue.Name, confirmation.DeliveryTag)
 		}
 
-		delivery = <-deliveryChannel
+		delivery := <-deliveryChannel
 
-		buffer.Reset()
-		_, err = buffer.Write(delivery)
+		if expectedMessage != string(delivery.Body) {
+			t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", expectedMessage, string(delivery.Body))
+		}
+
+		if delivery.Id != strconv.Itoa(i+1) {
+			t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", i+1, delivery.Id)
+		}
+
+		if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
+			t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
+		}
+
+		err = consumer.Acknowledge(
+			dto_pkg.BrokerAcknowledge{
+				MessageId: delivery.Id,
+				Action:    constants.ACKNOWLEDGE_SUCCESS,
+			},
+		)
 		if err != nil {
-			t.Fatal("error writing to buffer: " + err.Error())
-		}
-
-		err = gob.NewDecoder(&buffer).Decode(&message)
-		if err != nil {
-			t.Fatal("error decoding gob: " + err.Error())
-		}
-
-		if string(message.Data) != expectedMessage {
-			t.Fatal("error at consume.\nexpected: " + expectedMessage + "\ngot:      " + string(message.Data))
-		}
-
-		if message.Id != strconv.Itoa(i+1) {
-			t.Fatal("error at consume id.\nexpected: " + strconv.Itoa(i+1) + "\ngot:      " + message.Id)
-		}
-
-		log.Println(string(message.Data))
-
-		acknowledge = dto.Acknowledge{
-			Id:      message.Id,
-			Success: true,
-			Requeue: false,
-			Enqueue: false,
-		}
-
-		buffer.Reset()
-		err = gob.NewEncoder(&buffer).Encode(acknowledge)
-		if err != nil {
-			t.Fatal("error encoding gob: " + err.Error())
-		}
-
-		err = messageBroker.Acknowledge(buffer.Bytes())
-		if err != nil {
-			t.Error("error with acknowlege: " + err.Error())
+			t.Fatalf("error with acknowledge: %s", err.Error())
 		}
 	}
 
-	err := rabbitmq.DeleteQueueAndExchange(messageBroker.Consumer.Channel().Access(), queueName, exchangeName, "doit")
+	consumer.BreakConsume()
+
+	err := deleteQueueAndExchange(consumer.Channel().Channel, queue.Name, queue.Exchange, "doit")
 	if err != nil {
-		t.Error("error deleting queue " + queueName + ": " + err.Error())
+		t.Fatalf("error deleting queue: %s", err.Error())
 	}
 
-	messageBroker.CloseConnection()
+	consumer.CloseConnection()
 
-	log.Printf("\nfinishing testing ConsumeForever for RabbitMQ\n\n\n")
+	log.Printf("finishing testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
+}
+
+func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
+	ctx := context.Background()
+	log.Printf("testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
+
+	var messages []string = []string{"test001", "test002"}
+	var expectedHeader map[string]any = map[string]any{
+		"wololo": "walala",
+		"type":   "test",
+	}
+
+	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
+		RABBITMQ_PROTOCOL: "amqp",
+		RABBITMQ_HOST:     "localhost",
+		RABBITMQ_PORT:     "5672",
+		RABBITMQ_USERNAME: "guest",
+		RABBITMQ_PASSWORD: "guest",
+	}
+
+	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+		Exchange:     "test",
+		ExchangeType: "direct",
+		Name:         "adapter_test",
+		AccessKey:    "adapter_test",
+		Qos:          1,
+		Purge:        true,
+	}
+
+	var deadletter rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+		Exchange:     "test",
+		ExchangeType: "direct",
+		Name:         "deadletter_test",
+		AccessKey:    "deadletter_test",
+	}
+
+	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		env,
+		"deadletter",
+		deadletter,
+	)
+	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		env,
+		"test",
+		publisher,
+		queue,
+	)
+
+	consumer.Connect()
+
+	consumer.PrepareQueue()
+
+	deliveryChannel := consumer.Deliveries()
+
+	go consumer.ConsumeForever(ctx)
+	time.Sleep(time.Second)
+
+	for _, expectedMessage := range messages {
+		confirmation, err := consumer.Channel().Channel.PublishWithDeferredConfirmWithContext(
+			context.Background(),
+			queue.Exchange,
+			queue.AccessKey,
+			true,
+			false,
+			amqp.Publishing{
+				Body:    []byte(expectedMessage),
+				Headers: expectedHeader,
+			},
+		)
+		if err != nil {
+			t.Fatalf("error publishing message to RabbitMQ: %s", err.Error())
+		}
+
+		success := confirmation.Wait()
+		if !success {
+			t.Fatalf("publishing confirmation failed on queue %s with delivery TAG %d", queue.Name, confirmation.DeliveryTag)
+		}
+	}
+
+	//IN CASE OF FAILURE, THE TEST WOULD BLOCK
+
+	//testing success
+	delivery := <-deliveryChannel
+
+	if messages[0] != string(delivery.Body) {
+		t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", messages[0], string(delivery.Body))
+	}
+
+	if delivery.Id != "1" {
+		t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", 1, delivery.Id)
+	}
+
+	if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
+		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
+	}
+
+	delivery.Acknowledger <- dto_pkg.BrokerAcknowledge{
+		MessageId: delivery.Id,
+		Action:    constants.ACKNOWLEDGE_SUCCESS,
+	}
+	//testing success
+
+	//testing requeue
+	delivery = <-deliveryChannel
+
+	if messages[1] != string(delivery.Body) {
+		t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", messages[1], string(delivery.Body))
+	}
+
+	if delivery.Id != "2" {
+		t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", 2, delivery.Id)
+	}
+
+	if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
+		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
+	}
+
+	delivery.Acknowledger <- dto_pkg.BrokerAcknowledge{
+		MessageId: delivery.Id,
+		Action:    constants.ACKNOWLEDGE_REQUEUE,
+	}
+	//testing requeue
+
+	//testing deadletter
+	delivery = <-deliveryChannel
+
+	if messages[1] != string(delivery.Body) {
+		t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", messages[1], string(delivery.Body))
+	}
+
+	if delivery.Id != "3" {
+		t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", 3, delivery.Id)
+	}
+
+	if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
+		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
+	}
+
+	delivery.Acknowledger <- dto_pkg.BrokerAcknowledge{
+		MessageId: delivery.Id,
+		Action:    constants.ACKNOWLEDGE_DEADLETTER,
+		Report: dto_pkg.BrokerPublishing{
+			Header: delivery.Header,
+			Body:   delivery.Body,
+		},
+	}
+
+	time.Sleep(time.Second)
+
+	amqpDelivery, _, err := publisher.Channel().Channel.Get(deadletter.Name, true)
+	if err != nil {
+		t.Fatalf("error consuming message: %s", err.Error())
+	}
+
+	expectedDeadletterHeader, err := json.Marshal(expectedHeader)
+	if err != nil {
+		t.Fatalf("failed to marshall expected header json: %s", err.Error())
+	}
+	deliveryHeader, err := json.Marshal(amqpDelivery.Headers)
+	if err != nil {
+		t.Fatalf("failed to marshall expected header json: %s", err.Error())
+	}
+
+	if messages[1] != string(amqpDelivery.Body) {
+		t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", messages[1], string(amqpDelivery.Body))
+	}
+
+	if reflect.DeepEqual(expectedDeadletterHeader, deliveryHeader) == false {
+		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedDeadletterHeader, deliveryHeader)
+	}
+	//testing deadletter
+
+	time.Sleep(time.Second)
+	err = deleteQueueAndExchange(consumer.Channel().Channel, queue.Name, queue.Exchange, "doit")
+	if err != nil {
+		t.Fatalf("error deleting queue: %s", err.Error())
+	}
+	err = deleteQueueAndExchange(consumer.Channel().Channel, deadletter.Name, deadletter.Exchange, "doit")
+	if err != nil {
+		t.Fatalf("error deleting queue: %s", err.Error())
+	}
+
+	consumer.BreakConsume()
+	consumer.CloseConnection()
+
+	log.Printf("finishing testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
+}
+
+func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
+	ctx := context.Background()
+	log.Printf("testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
+
+	var message string = "test001"
+	var expectedHeader map[string]any = map[string]any{
+		"wololo": "walala",
+		"type":   "test",
+	}
+
+	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
+		RABBITMQ_PROTOCOL: "amqp",
+		RABBITMQ_HOST:     "localhost",
+		RABBITMQ_PORT:     "5672",
+		RABBITMQ_USERNAME: "guest",
+		RABBITMQ_PASSWORD: "guest",
+	}
+
+	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+		Exchange:     "test",
+		ExchangeType: "direct",
+		Name:         "adapter_test",
+		AccessKey:    "adapter_test",
+		Qos:          1,
+		Purge:        true,
+	}
+
+	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		env,
+		"test",
+		nil,
+		queue,
+	)
+
+	consumer.Connect()
+
+	consumer.PrepareQueue()
+
+	deliveryChannel := consumer.Deliveries()
+
+	go consumer.ConsumeForever(ctx)
+	time.Sleep(time.Second)
+
+	confirmation, err := consumer.Channel().Channel.PublishWithDeferredConfirmWithContext(
+		context.Background(),
+		queue.Exchange,
+		queue.AccessKey,
+		true,
+		false,
+		amqp.Publishing{
+			Body:    []byte(message),
+			Headers: expectedHeader,
+		},
+	)
+	if err != nil {
+		t.Fatalf("error publishing message to RabbitMQ: %s", err.Error())
+	}
+
+	success := confirmation.Wait()
+	if !success {
+		t.Fatalf("publishing confirmation failed on queue %s with delivery TAG %d", queue.Name, confirmation.DeliveryTag)
+	}
+
+	delivery := <-deliveryChannel
+
+	if message != string(delivery.Body) {
+		t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", message, string(delivery.Body))
+	}
+
+	if delivery.Id != "1" {
+		t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", 1, delivery.Id)
+	}
+
+	if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
+		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
+	}
+
+	consumer.Acknowledge(dto_pkg.BrokerAcknowledge{
+		MessageId: delivery.Id,
+		Action:    constants.ACKNOWLEDGE_DEADLETTER,
+		Report: dto_pkg.BrokerPublishing{
+			Header: delivery.Header,
+			Body:   delivery.Body,
+		},
+	})
+
+	err = deleteQueueAndExchange(consumer.Channel().Channel, queue.Name, queue.Exchange, "doit")
+	if err != nil {
+		t.Fatalf("error deleting queue: %s", err.Error())
+	}
+
+	consumer.BreakConsume()
+	consumer.CloseConnection()
+
+	log.Printf("finishing testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
 }

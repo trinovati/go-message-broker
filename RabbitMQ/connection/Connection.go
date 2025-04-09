@@ -4,85 +4,64 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/url"
 	"runtime"
 	"sync"
 	"time"
 
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/config"
-	"gitlab.com/aplicacao/trinovati-connector-message-brokers/v2/RabbitMQ/interfaces"
-
+	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/trinovati/go-message-broker/v3/RabbitMQ/config"
 )
 
 /*
-Object used to reference a amqp.Connection and store all the data needed to keep track of its health.
+Object used to reference a amqp.Connection address.
+
+Since the connections have intimate relation with the address of amqp.Connection, it could not be moved to another memory position for
+shared connection purposes, so all shared connections points to a single RabbitMQConnection object.
+
+The purpose of this abstraction is minimize the quantity of open amqp.Connection to RabbitMQ and at the same time make use of a keep alive
+and reconnect technique.
 */
-type Connection struct {
-	protocol                   string
-	user                       string
-	password                   string
-	ServerAddress              string
-	port                       string
+type RabbitMQConnection struct {
+	env                        config.RABBITMQ_CONFIG
 	isOpen                     bool
 	Connection                 *amqp.Connection
 	lastConnectionError        *amqp.Error
 	closureNotificationChannel chan *amqp.Error
 	Context                    context.Context
 	CancelContext              context.CancelFunc
+	ConnectionCount            uint64
+	ConnectionId               uuid.UUID
 	Mutex                      *sync.Mutex
-	ConnectionId               uint64
 }
 
 /*
-Build an object used to reference a amqp.Connection and store all the data needed to keep track of its health.
+Builder of RabbitMQConnection object.
 */
-func NewConnection() *Connection {
-	var protocol string = config.RABBITMQ_PROTOCOL
-	var user string = url.QueryEscape(config.RABBITMQ_USERNAME)
-	var password string = url.QueryEscape(config.RABBITMQ_PASSWORD)
-	var ServerAddress string = url.QueryEscape(config.RABBITMQ_HOST)
-	var port string = url.QueryEscape(config.RABBITMQ_PORT)
-
-	return &Connection{
-		protocol:                   protocol,
-		user:                       user,
-		password:                   password,
-		ServerAddress:              ServerAddress,
-		port:                       port,
+func NewRabbitMQConnection(env config.RABBITMQ_CONFIG) *RabbitMQConnection {
+	return &RabbitMQConnection{
+		env:                        env,
 		Connection:                 nil,
 		isOpen:                     false,
 		lastConnectionError:        nil,
 		closureNotificationChannel: nil,
-		ConnectionId:               0,
+		ConnectionCount:            0,
+		ConnectionId:               uuid.New(),
 		Mutex:                      &sync.Mutex{},
 	}
 }
 
-func (c *Connection) WithConnectionData(host string, port string, username string, password string) interfaces.Connection {
-	c.protocol = config.RABBITMQ_PROTOCOL
-
-	c.user = url.QueryEscape(username)
-	c.password = url.QueryEscape(password)
-	c.ServerAddress = url.QueryEscape(host)
-	c.port = url.QueryEscape(port)
-
-	return c
-}
-
-func (c Connection) Id() uint64 {
-	return c.ConnectionId
+func (c *RabbitMQConnection) Env() config.RABBITMQ_CONFIG {
+	return c.env
 }
 
 /*
-Connect to the RabbitMQ server and open a goroutine for the connection maintance.
+Create and keep alive a amqp.Connection linked to RabbitMQ connection.
 
-If terminanteOnConnectionError is true at RabbitMQ object, any problem with connection will cause a panic.
-If false, it will retry connection on the same server every time it is lost.
-
-It is safe to share connection by multiple objects.
+If connection is dropped for any reason it will try to remake the connection.
+To terminate the connection, use CloseConnection() method, it will close the connection via context.Done().
 */
-func (c *Connection) Connect() interfaces.Connection {
+func (c *RabbitMQConnection) Connect() *RabbitMQConnection {
 	var err error
 	var connection *amqp.Connection
 
@@ -91,15 +70,15 @@ func (c *Connection) Connect() interfaces.Connection {
 	}
 
 	for {
-		connection, err = amqp.Dial(c.protocol + "://" + c.user + ":" + c.password + "@" + c.ServerAddress + ":" + c.port + "/")
+		connection, err = amqp.Dial(c.env.RABBITMQ_PROTOCOL + "://" + c.env.RABBITMQ_USERNAME + ":" + c.env.RABBITMQ_PASSWORD + "@" + c.env.RABBITMQ_HOST + ":" + c.env.RABBITMQ_PORT + "/")
 		if err != nil {
-			config.Error.Wrap(err, "error creating a connection linked to RabbitMQ server '"+c.ServerAddress+"'").Print()
+			log.Printf(fmt.Sprintf("error creating a connection to RabbitMQ server: %s: %s\n", c.env.RABBITMQ_HOST, err))
 			time.Sleep(time.Second)
 			continue
 		}
 
 		c.updateConnection(connection)
-		log.Printf("Successfully opened connection id '%d' at server '%s'", c.ConnectionId, c.ServerAddress)
+		log.Printf("opened connection id %s at server %s\n", c.ConnectionId.String(), c.env.RABBITMQ_HOST)
 
 		c.isOpen = true
 
@@ -112,26 +91,30 @@ func (c *Connection) Connect() interfaces.Connection {
 }
 
 /*
-Refresh the closureNotificationChannel for helthyness.
+Refresh the closureNotificationChannel for healthiness.
 
 Reference the newly created amqp.Connection, assuring assincronus concurrent access to multiple objects.
 
-Refresh the connection id for controll of references.
+Refresh the connection id for control of references.
 */
-func (c *Connection) updateConnection(connection *amqp.Connection) {
+func (c *RabbitMQConnection) updateConnection(connection *amqp.Connection) {
 	c.closureNotificationChannel = connection.NotifyClose(make(chan *amqp.Error))
 
 	c.Connection = connection
-	c.ConnectionId++
+	c.ConnectionCount++
 }
 
 /*
-Method for reconnection in case of RabbitMQ server drops.
+Method for maintenance of a amqp.Connection.
+
+It will close the connection if the RabbitMQConnection signal its closure.
+
+It will reconnect if receive a signal of dropped connection.
 */
-func (c *Connection) keepConnection(ctx context.Context) {
+func (c *RabbitMQConnection) keepConnection(ctx context.Context) {
 	select {
 	case <-ctx.Done():
-		log.Printf("connection context of connection id '%d' at server '%s' have been closed", c.ConnectionId, c.ServerAddress)
+		log.Printf("connection context of connection id %s at server %s have been closed\n", c.ConnectionId.String(), c.env.RABBITMQ_HOST)
 
 	case closeNotification := <-c.closureNotificationChannel:
 		c.isOpen = false
@@ -139,10 +122,10 @@ func (c *Connection) keepConnection(ctx context.Context) {
 
 		if closeNotification != nil {
 			c.lastConnectionError = closeNotification
-			config.Error.New(fmt.Sprintf("connection of connection id '%d' at server '%s' have closed with\nreason: '%s'\nerror: '%s'\nstatus code: '%d'", c.ConnectionId, c.ServerAddress, closeNotification.Reason, closeNotification.Error(), closeNotification.Code)).Print()
+			log.Printf("connection id %s at server %s have closed with\nreason: '%s'\nerror: '%s'\nstatus code: '%d'\n", c.ConnectionId.String(), c.env.RABBITMQ_HOST, closeNotification.Reason, closeNotification.Error(), closeNotification.Code)
 
 		} else {
-			config.Error.New(fmt.Sprintf("connection of connection id '%d' at server '%s' have closed with no specified reason", c.ConnectionId, c.ServerAddress)).Print()
+			log.Printf("connection id %s at server %s have closed with no specified reason\n", c.ConnectionId.String(), c.env.RABBITMQ_HOST)
 		}
 
 		c.Connect()
@@ -152,9 +135,11 @@ func (c *Connection) keepConnection(ctx context.Context) {
 }
 
 /*
-Method for closing the connection via context, sending  signal for all objects sharring connection to terminate its process.
+Method for closing the connection via context.
+
+Keep in mind that this will affect all objects that shares connection with this one.
 */
-func (c *Connection) CloseConnection() {
+func (c *RabbitMQConnection) CloseConnection() {
 	c.isOpen = false
 
 	if c.CancelContext != nil {
@@ -165,16 +150,16 @@ func (c *Connection) CloseConnection() {
 }
 
 /*
-Check the connection, returning true if its down and unavailble.
+Check the RabbitMQConnection availability.
 */
-func (c *Connection) IsConnectionDown() bool {
+func (c *RabbitMQConnection) IsConnectionDown() bool {
 	return !c.isOpen
 }
 
 /*
 Block the process until the connection is open.
 */
-func (c *Connection) WaitForConnection() {
+func (c *RabbitMQConnection) WaitForConnection() {
 	for {
 		if c.isOpen {
 			return
