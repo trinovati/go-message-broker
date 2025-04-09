@@ -12,14 +12,14 @@ import (
 	"testing"
 	"time"
 
-	amqp "github.com/rabbitmq/amqp091-go"
-	slogctx "github.com/veqryn/slog-context"
-
 	rabbitmq "github.com/trinovati/go-message-broker/v3/RabbitMQ"
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/config"
-	rabbitmqdto "github.com/trinovati/go-message-broker/v3/RabbitMQ/dto"
-	"github.com/trinovati/go-message-broker/v3/constants"
-	dto_pkg "github.com/trinovati/go-message-broker/v3/dto"
+	dto_rabbitmq "github.com/trinovati/go-message-broker/v3/RabbitMQ/dto"
+	constant_broker "github.com/trinovati/go-message-broker/v3/pkg/constant"
+	dto_broker "github.com/trinovati/go-message-broker/v3/pkg/dto"
+
+	amqp "github.com/rabbitmq/amqp091-go"
+	slogctx "github.com/veqryn/slog-context"
 )
 
 /*
@@ -31,7 +31,7 @@ safePassword asserts that you're sure of it.
 */
 
 func deleteQueueAndExchange(channel *amqp.Channel, queueName string, exchangeName string, safePassword string) (err error) {
-	
+
 	if safePassword == "doit" {
 		_, err = channel.QueueDelete(queueName, false, false, false)
 		if err != nil {
@@ -51,7 +51,7 @@ func deleteQueueAndExchange(channel *amqp.Channel, queueName string, exchangeNam
 }
 
 func TestConnectionRabbitMQ(t *testing.T) {
-	
+
 	logger := slog.New(
 		slogctx.NewHandler(
 			slog.NewJSONHandler(
@@ -60,9 +60,7 @@ func TestConnectionRabbitMQ(t *testing.T) {
 					AddSource: true,
 				},
 			).WithAttrs(
-				[]slog.Attr{
-
-				},
+				[]slog.Attr{},
 			),
 			nil,
 		),
@@ -78,7 +76,7 @@ func TestConnectionRabbitMQ(t *testing.T) {
 		PASSWORD: "guest",
 	}
 
-	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+	var queue dto_rabbitmq.RabbitMQQueue = dto_rabbitmq.RabbitMQQueue{
 		Exchange:     "",
 		ExchangeType: "",
 		Name:         "",
@@ -162,7 +160,7 @@ func TestConnectionRabbitMQ(t *testing.T) {
 func TestChannelRabbitMQ(t *testing.T) {
 	ctx := context.Background()
 	log.Printf("testing Channel for RabbitMQ\n\n")
-	
+
 	logger := slog.New(
 		slogctx.NewHandler(
 			slog.NewJSONHandler(
@@ -171,9 +169,7 @@ func TestChannelRabbitMQ(t *testing.T) {
 					AddSource: true,
 				},
 			).WithAttrs(
-				[]slog.Attr{
-
-				},
+				[]slog.Attr{},
 			),
 			nil,
 		),
@@ -187,7 +183,7 @@ func TestChannelRabbitMQ(t *testing.T) {
 		PASSWORD: "guest",
 	}
 
-	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+	var queue dto_rabbitmq.RabbitMQQueue = dto_rabbitmq.RabbitMQQueue{
 		Exchange:     "",
 		ExchangeType: "",
 		Name:         "",
@@ -263,7 +259,7 @@ func TestChannelRabbitMQ(t *testing.T) {
 }
 
 func TestShareConnectionRabbitMQ(t *testing.T) {
-		
+
 	logger := slog.New(
 		slogctx.NewHandler(
 			slog.NewJSONHandler(
@@ -272,9 +268,7 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 					AddSource: true,
 				},
 			).WithAttrs(
-				[]slog.Attr{
-
-				},
+				[]slog.Attr{},
 			),
 			nil,
 		),
@@ -291,7 +285,7 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 		PASSWORD: "guest",
 	}
 
-	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+	var queue dto_rabbitmq.RabbitMQQueue = dto_rabbitmq.RabbitMQQueue{
 		Exchange:     "",
 		ExchangeType: "",
 		Name:         "",
@@ -362,7 +356,7 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 	ctx := context.Background()
 
 	log.Printf("testing ShareChannel for RabbitMQ\n\n")
-	
+
 	logger := slog.New(
 		slogctx.NewHandler(
 			slog.NewJSONHandler(
@@ -371,9 +365,7 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 					AddSource: true,
 				},
 			).WithAttrs(
-				[]slog.Attr{
-
-				},
+				[]slog.Attr{},
 			),
 			nil,
 		),
@@ -387,7 +379,7 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 		PASSWORD: "guest",
 	}
 
-	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+	var queue dto_rabbitmq.RabbitMQQueue = dto_rabbitmq.RabbitMQQueue{
 		Exchange:     "",
 		ExchangeType: "",
 		Name:         "",
@@ -462,7 +454,7 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 func TestPublishRabbitMQ(t *testing.T) {
 	ctx := context.Background()
 	log.Print("testing Publish for RabbitMQ\n\n")
-	
+
 	logger := slog.New(
 		slogctx.NewHandler(
 			slog.NewJSONHandler(
@@ -471,9 +463,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 					AddSource: true,
 				},
 			).WithAttrs(
-				[]slog.Attr{
-
-				},
+				[]slog.Attr{},
 			),
 			nil,
 		),
@@ -487,7 +477,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 		PASSWORD: "guest",
 	}
 
-	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+	var queue dto_rabbitmq.RabbitMQQueue = dto_rabbitmq.RabbitMQQueue{
 		Exchange:     "test",
 		ExchangeType: "direct",
 		Name:         "adapter_test",
@@ -510,7 +500,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 		t.Fatalf("error purging the queue: %s", err.Error())
 	}
 
-	var expectedPublishing dto_pkg.BrokerPublishing = dto_pkg.BrokerPublishing{
+	var expectedPublishing dto_broker.BrokerPublishing = dto_broker.BrokerPublishing{
 		Header: map[string]any{
 			"wololo": "walala",
 			"type":   "test",
@@ -522,7 +512,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 		t.Fatalf("failed to marshall expected header json: %s", err.Error())
 	}
 
-	err = publisher.Publish(ctx,expectedPublishing)
+	err = publisher.Publish(ctx, expectedPublishing)
 	if err != nil {
 		t.Fatalf("error publishing to queue: %s", err.Error())
 	}
@@ -559,7 +549,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 	ctx := context.Background()
 	log.Printf("testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
-	
+
 	logger := slog.New(
 		slogctx.NewHandler(
 			slog.NewJSONHandler(
@@ -568,9 +558,7 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 					AddSource: true,
 				},
 			).WithAttrs(
-				[]slog.Attr{
-
-				},
+				[]slog.Attr{},
 			),
 			nil,
 		),
@@ -590,7 +578,7 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 		PASSWORD: "guest",
 	}
 
-	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+	var queue dto_rabbitmq.RabbitMQQueue = dto_rabbitmq.RabbitMQQueue{
 		Exchange:     "test",
 		ExchangeType: "direct",
 		Name:         "adapter_test",
@@ -655,9 +643,9 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 		}
 
 		err = consumer.Acknowledge(
-			dto_pkg.BrokerAcknowledge{
+			dto_broker.BrokerAcknowledge{
 				MessageId: delivery.Id,
-				Action:    constants.ACKNOWLEDGE_SUCCESS,
+				Action:    constant_broker.ACKNOWLEDGE_SUCCESS,
 			},
 		)
 		if err != nil {
@@ -680,7 +668,7 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	ctx := context.Background()
 	log.Printf("testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
-	
+
 	logger := slog.New(
 		slogctx.NewHandler(
 			slog.NewJSONHandler(
@@ -689,9 +677,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 					AddSource: true,
 				},
 			).WithAttrs(
-				[]slog.Attr{
-
-				},
+				[]slog.Attr{},
 			),
 			nil,
 		),
@@ -711,7 +697,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		PASSWORD: "guest",
 	}
 
-	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+	var queue dto_rabbitmq.RabbitMQQueue = dto_rabbitmq.RabbitMQQueue{
 		Exchange:     "test",
 		ExchangeType: "direct",
 		Name:         "adapter_test",
@@ -720,7 +706,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		Purge:        true,
 	}
 
-	var deadletter rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+	var deadletter dto_rabbitmq.RabbitMQQueue = dto_rabbitmq.RabbitMQQueue{
 		Exchange:     "test",
 		ExchangeType: "direct",
 		Name:         "deadletter_test",
@@ -792,9 +778,9 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
 	}
 
-	delivery.Acknowledger <- dto_pkg.BrokerAcknowledge{
+	delivery.Acknowledger <- dto_broker.BrokerAcknowledge{
 		MessageId: delivery.Id,
-		Action:    constants.ACKNOWLEDGE_SUCCESS,
+		Action:    constant_broker.ACKNOWLEDGE_SUCCESS,
 	}
 	// testing success
 
@@ -813,9 +799,9 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
 	}
 
-	delivery.Acknowledger <- dto_pkg.BrokerAcknowledge{
+	delivery.Acknowledger <- dto_broker.BrokerAcknowledge{
 		MessageId: delivery.Id,
-		Action:    constants.ACKNOWLEDGE_REQUEUE,
+		Action:    constant_broker.ACKNOWLEDGE_REQUEUE,
 	}
 	// testing requeue
 
@@ -834,10 +820,10 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
 	}
 
-	delivery.Acknowledger <- dto_pkg.BrokerAcknowledge{
+	delivery.Acknowledger <- dto_broker.BrokerAcknowledge{
 		MessageId: delivery.Id,
-		Action:    constants.ACKNOWLEDGE_DEADLETTER,
-		Report: dto_pkg.BrokerPublishing{
+		Action:    constant_broker.ACKNOWLEDGE_DEADLETTER,
+		Report: dto_broker.BrokerPublishing{
 			Header: delivery.Header,
 			Body:   delivery.Body,
 		},
@@ -887,7 +873,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 	ctx := context.Background()
 	log.Printf("testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
-	
+
 	logger := slog.New(
 		slogctx.NewHandler(
 			slog.NewJSONHandler(
@@ -896,9 +882,7 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 					AddSource: true,
 				},
 			).WithAttrs(
-				[]slog.Attr{
-
-				},
+				[]slog.Attr{},
 			),
 			nil,
 		),
@@ -918,7 +902,7 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 		PASSWORD: "guest",
 	}
 
-	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
+	var queue dto_rabbitmq.RabbitMQQueue = dto_rabbitmq.RabbitMQQueue{
 		Exchange:     "test",
 		ExchangeType: "direct",
 		Name:         "adapter_test",
@@ -981,10 +965,10 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
 	}
 
-	consumer.Acknowledge(dto_pkg.BrokerAcknowledge{
+	consumer.Acknowledge(dto_broker.BrokerAcknowledge{
 		MessageId: delivery.Id,
-		Action:    constants.ACKNOWLEDGE_DEADLETTER,
-		Report: dto_pkg.BrokerPublishing{
+		Action:    constant_broker.ACKNOWLEDGE_DEADLETTER,
+		Report: dto_broker.BrokerPublishing{
 			Header: delivery.Header,
 			Body:   delivery.Body,
 		},
