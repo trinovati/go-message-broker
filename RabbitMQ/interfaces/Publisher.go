@@ -1,6 +1,6 @@
 package interfaces
 
-import dto_pkg "github.com/trinovati/go-message-broker/v3/dto"
+import "github.com/trinovati/go-message-broker/v3/port"
 
 /*
 Publisher must implement the basic Behavior for dealing with internal control and implement the
@@ -8,5 +8,5 @@ interface that represents the port this adapter is solving.
 */
 type Publisher interface {
 	Behavior
-	Publish(publishing dto_pkg.BrokerPublishing) error
+	port.Publisher
 }

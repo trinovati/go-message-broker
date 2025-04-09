@@ -1,10 +1,10 @@
 package dto
 
 type RabbitMQQueue struct {
-	Exchange     string
-	ExchangeType string
-	Name         string
-	AccessKey    string
-	Qos          int
-	Purge        bool
+	Exchange     string `json:"exchange"`
+	ExchangeType string `json:"exchange_type"`
+	Name         string `json:"name"`
+	AccessKey    string `json:"access_key"`
+	Qos          int    `json:"qos"`
+	Purge        bool   `json:"purge"`
 }

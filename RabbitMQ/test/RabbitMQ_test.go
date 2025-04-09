@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"log/slog"
+	"os"
 	"reflect"
 	"strconv"
 	"testing"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	slogctx "github.com/veqryn/slog-context"
 
 	rabbitmq "github.com/trinovati/go-message-broker/v3/RabbitMQ"
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/config"
@@ -26,7 +29,9 @@ FOR TEST PURPOSES ONLY!!!
 Delete a queue and a exchange.
 safePassword asserts that you're sure of it.
 */
+
 func deleteQueueAndExchange(channel *amqp.Channel, queueName string, exchangeName string, safePassword string) (err error) {
+	
 	if safePassword == "doit" {
 		_, err = channel.QueueDelete(queueName, false, false, false)
 		if err != nil {
@@ -46,14 +51,31 @@ func deleteQueueAndExchange(channel *amqp.Channel, queueName string, exchangeNam
 }
 
 func TestConnectionRabbitMQ(t *testing.T) {
-	log.Printf("testing Connection for RabbitMQ\n\n")
+	
+	logger := slog.New(
+		slogctx.NewHandler(
+			slog.NewJSONHandler(
+				os.Stdout,
+				&slog.HandlerOptions{
+					AddSource: true,
+				},
+			).WithAttrs(
+				[]slog.Attr{
 
+				},
+			),
+			nil,
+		),
+	)
+	slog.SetDefault(logger)
+	log.Printf("testing Connection for RabbitMQ\n\n")
+	ctx := context.Background()
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
-		RABBITMQ_PROTOCOL: "amqp",
-		RABBITMQ_HOST:     "localhost",
-		RABBITMQ_PORT:     "5672",
-		RABBITMQ_USERNAME: "guest",
-		RABBITMQ_PASSWORD: "guest",
+		PROTOCOL: "amqp",
+		HOST:     "localhost",
+		PORT:     "5672",
+		USERNAME: "guest",
+		PASSWORD: "guest",
 	}
 
 	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
@@ -66,20 +88,25 @@ func TestConnectionRabbitMQ(t *testing.T) {
 	}
 
 	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		ctx,
 		env,
 		"test",
 		nil,
 		queue,
+		0,
+		0,
+		logger,
 	)
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
 		env,
 		"test",
 		queue,
+		logger,
 	)
 
-	consumer.Connect()
-	publisher.Connect()
+	consumer.Connect(ctx)
+	publisher.Connect(ctx)
 
 	if consumer.Channel().Connection().ConnectionCount != 1 {
 		t.Fatalf("error at consumer connection count.\nexpected: %d\ngot:      %d", 1, consumer.Channel().Connection().ConnectionId)
@@ -100,8 +127,8 @@ func TestConnectionRabbitMQ(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
-	consumer.Channel().Connection().WaitForConnection()
-	publisher.Channel().Connection().WaitForConnection()
+	consumer.Channel().Connection().WaitForConnection(ctx)
+	publisher.Channel().Connection().WaitForConnection(ctx)
 
 	if consumer.Channel().Connection().ConnectionCount != 2 {
 		t.Fatalf("error at consumer connection count.\nexpected: %d\ngot:      %d", 2, consumer.Channel().Connection().ConnectionCount)
@@ -111,8 +138,8 @@ func TestConnectionRabbitMQ(t *testing.T) {
 	}
 
 	time.Sleep(time.Second)
-	consumer.CloseConnection()
-	publisher.CloseConnection()
+	consumer.CloseConnection(ctx)
+	publisher.CloseConnection(ctx)
 	time.Sleep(time.Second)
 
 	if !consumer.Channel().Connection().IsConnectionDown() {
@@ -133,14 +160,31 @@ func TestConnectionRabbitMQ(t *testing.T) {
 }
 
 func TestChannelRabbitMQ(t *testing.T) {
+	ctx := context.Background()
 	log.Printf("testing Channel for RabbitMQ\n\n")
+	
+	logger := slog.New(
+		slogctx.NewHandler(
+			slog.NewJSONHandler(
+				os.Stdout,
+				&slog.HandlerOptions{
+					AddSource: true,
+				},
+			).WithAttrs(
+				[]slog.Attr{
 
+				},
+			),
+			nil,
+		),
+	)
+	slog.SetDefault(logger)
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
-		RABBITMQ_PROTOCOL: "amqp",
-		RABBITMQ_HOST:     "localhost",
-		RABBITMQ_PORT:     "5672",
-		RABBITMQ_USERNAME: "guest",
-		RABBITMQ_PASSWORD: "guest",
+		PROTOCOL: "amqp",
+		HOST:     "localhost",
+		PORT:     "5672",
+		USERNAME: "guest",
+		PASSWORD: "guest",
 	}
 
 	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
@@ -153,20 +197,25 @@ func TestChannelRabbitMQ(t *testing.T) {
 	}
 
 	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		ctx,
 		env,
 		"test",
 		nil,
 		queue,
+		0,
+		0,
+		logger,
 	)
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
 		env,
 		"test",
 		queue,
+		logger,
 	)
 
-	consumer.Connect()
-	publisher.Connect()
+	consumer.Connect(ctx)
+	publisher.Connect(ctx)
 
 	if consumer.Channel().ChannelCount != 1 {
 		t.Fatalf("error at consumer channel.\nexpected: %d\ngot:      %d", 1, consumer.Channel().ChannelCount)
@@ -185,8 +234,8 @@ func TestChannelRabbitMQ(t *testing.T) {
 	publisher.Channel().Channel.Close()
 	consumer.Channel().Channel.Close()
 
-	consumer.Channel().WaitForChannel()
-	publisher.Channel().WaitForChannel()
+	consumer.Channel().WaitForChannel(ctx)
+	publisher.Channel().WaitForChannel(ctx)
 
 	if consumer.Channel().ChannelCount != 2 {
 		t.Fatalf("error at consumer channel count.\nexpected: %d\ngot:      %d", 2, consumer.Channel().ChannelCount)
@@ -195,8 +244,8 @@ func TestChannelRabbitMQ(t *testing.T) {
 		t.Fatalf("error at publisher channel count.\nexpected: %d\ngot:      %d", 2, publisher.Channel().ChannelCount)
 	}
 
-	consumer.CloseChannel()
-	publisher.CloseChannel()
+	consumer.CloseChannel(ctx)
+	publisher.CloseChannel(ctx)
 	time.Sleep(time.Second)
 
 	if !consumer.Channel().IsChannelDown() {
@@ -206,22 +255,40 @@ func TestChannelRabbitMQ(t *testing.T) {
 		t.Error("publisher channel should be down")
 	}
 
-	consumer.CloseConnection()
-	publisher.CloseConnection()
+	consumer.CloseConnection(ctx)
+	publisher.CloseConnection(ctx)
 	time.Sleep(time.Second)
 
 	log.Printf("finishing testing Channel for RabbitMQ\n\n")
 }
 
 func TestShareConnectionRabbitMQ(t *testing.T) {
+		
+	logger := slog.New(
+		slogctx.NewHandler(
+			slog.NewJSONHandler(
+				os.Stdout,
+				&slog.HandlerOptions{
+					AddSource: true,
+				},
+			).WithAttrs(
+				[]slog.Attr{
+
+				},
+			),
+			nil,
+		),
+	)
+	slog.SetDefault(logger)
+	ctx := context.Background()
 	log.Printf("testing ShareConnection for RabbitMQ\n\n")
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
-		RABBITMQ_PROTOCOL: "amqp",
-		RABBITMQ_HOST:     "localhost",
-		RABBITMQ_PORT:     "5672",
-		RABBITMQ_USERNAME: "guest",
-		RABBITMQ_PASSWORD: "guest",
+		PROTOCOL: "amqp",
+		HOST:     "localhost",
+		PORT:     "5672",
+		USERNAME: "guest",
+		PASSWORD: "guest",
 	}
 
 	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
@@ -234,22 +301,27 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 	}
 
 	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		ctx,
 		env,
 		"test",
 		nil,
 		queue,
+		0,
+		0,
+		logger,
 	)
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
 		env,
 		"test",
 		queue,
+		logger,
 	)
 
 	publisher.ShareConnection(consumer)
 
-	consumer.Connect()
-	publisher.Connect()
+	consumer.Connect(ctx)
+	publisher.Connect(ctx)
 
 	if consumer.Channel().Connection().IsConnectionDown() {
 		t.Fatalf("connection should be up")
@@ -266,7 +338,7 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 		t.Fatalf("should not share channels\n")
 	}
 
-	consumer.CloseConnection()
+	consumer.CloseConnection(ctx)
 	time.Sleep(time.Second)
 
 	if !consumer.Channel().Connection().IsConnectionDown() {
@@ -287,14 +359,32 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 }
 
 func TestShareChannelRabbitMQ(t *testing.T) {
-	log.Printf("testing ShareChannel for RabbitMQ\n\n")
+	ctx := context.Background()
 
+	log.Printf("testing ShareChannel for RabbitMQ\n\n")
+	
+	logger := slog.New(
+		slogctx.NewHandler(
+			slog.NewJSONHandler(
+				os.Stdout,
+				&slog.HandlerOptions{
+					AddSource: true,
+				},
+			).WithAttrs(
+				[]slog.Attr{
+
+				},
+			),
+			nil,
+		),
+	)
+	slog.SetDefault(logger)
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
-		RABBITMQ_PROTOCOL: "amqp",
-		RABBITMQ_HOST:     "localhost",
-		RABBITMQ_PORT:     "5672",
-		RABBITMQ_USERNAME: "guest",
-		RABBITMQ_PASSWORD: "guest",
+		PROTOCOL: "amqp",
+		HOST:     "localhost",
+		PORT:     "5672",
+		USERNAME: "guest",
+		PASSWORD: "guest",
 	}
 
 	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
@@ -307,20 +397,25 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 	}
 
 	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		ctx,
 		env,
 		"test",
 		nil,
 		queue,
+		0,
+		0,
+		logger,
 	)
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
 		env,
 		"test",
 		queue,
+		logger,
 	)
 
 	publisher.ShareChannel(consumer)
-	consumer.Connect()
+	consumer.Connect(ctx)
 
 	if consumer.Channel().Connection().IsConnectionDown() {
 		t.Fatalf("connection should be up")
@@ -344,7 +439,7 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 		t.Fatalf("error with shared channels\nexpected: %+v\ngot:      %+v", publisher.Channel(), consumer.Channel())
 	}
 
-	consumer.CloseConnection()
+	consumer.CloseConnection(ctx)
 	time.Sleep(time.Second)
 
 	if !consumer.Channel().Connection().IsConnectionDown() {
@@ -365,14 +460,31 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 }
 
 func TestPublishRabbitMQ(t *testing.T) {
+	ctx := context.Background()
 	log.Print("testing Publish for RabbitMQ\n\n")
+	
+	logger := slog.New(
+		slogctx.NewHandler(
+			slog.NewJSONHandler(
+				os.Stdout,
+				&slog.HandlerOptions{
+					AddSource: true,
+				},
+			).WithAttrs(
+				[]slog.Attr{
 
+				},
+			),
+			nil,
+		),
+	)
+	slog.SetDefault(logger)
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
-		RABBITMQ_PROTOCOL: "amqp",
-		RABBITMQ_HOST:     "localhost",
-		RABBITMQ_PORT:     "5672",
-		RABBITMQ_USERNAME: "guest",
-		RABBITMQ_PASSWORD: "guest",
+		PROTOCOL: "amqp",
+		HOST:     "localhost",
+		PORT:     "5672",
+		USERNAME: "guest",
+		PASSWORD: "guest",
 	}
 
 	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
@@ -386,11 +498,12 @@ func TestPublishRabbitMQ(t *testing.T) {
 		env,
 		"test",
 		queue,
+		logger,
 	)
 
-	publisher.Connect()
+	publisher.Connect(ctx)
 
-	publisher.PrepareQueue()
+	publisher.PrepareQueue(ctx)
 
 	_, err := publisher.Channel().Channel.QueuePurge(queue.Name, true)
 	if err != nil {
@@ -409,7 +522,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 		t.Fatalf("failed to marshall expected header json: %s", err.Error())
 	}
 
-	err = publisher.Publish(expectedPublishing)
+	err = publisher.Publish(ctx,expectedPublishing)
 	if err != nil {
 		t.Fatalf("error publishing to queue: %s", err.Error())
 	}
@@ -437,7 +550,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 		t.Error("error deleting queue: " + err.Error())
 	}
 
-	publisher.CloseConnection()
+	publisher.CloseConnection(ctx)
 	time.Sleep(time.Second)
 
 	log.Printf("finishing testing Publish for RabbitMQ\n\n")
@@ -446,7 +559,23 @@ func TestPublishRabbitMQ(t *testing.T) {
 func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 	ctx := context.Background()
 	log.Printf("testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
+	
+	logger := slog.New(
+		slogctx.NewHandler(
+			slog.NewJSONHandler(
+				os.Stdout,
+				&slog.HandlerOptions{
+					AddSource: true,
+				},
+			).WithAttrs(
+				[]slog.Attr{
 
+				},
+			),
+			nil,
+		),
+	)
+	slog.SetDefault(logger)
 	var messages []string = []string{"test001", "test002", "test003"}
 	var expectedHeader map[string]any = map[string]any{
 		"wololo": "walala",
@@ -454,11 +583,11 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 	}
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
-		RABBITMQ_PROTOCOL: "amqp",
-		RABBITMQ_HOST:     "localhost",
-		RABBITMQ_PORT:     "5672",
-		RABBITMQ_USERNAME: "guest",
-		RABBITMQ_PASSWORD: "guest",
+		PROTOCOL: "amqp",
+		HOST:     "localhost",
+		PORT:     "5672",
+		USERNAME: "guest",
+		PASSWORD: "guest",
 	}
 
 	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
@@ -471,15 +600,19 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 	}
 
 	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		ctx,
 		env,
 		"test",
 		nil,
 		queue,
+		0,
+		0,
+		logger,
 	)
 
-	consumer.Connect()
+	consumer.Connect(ctx)
 
-	consumer.PrepareQueue()
+	consumer.PrepareQueue(ctx)
 
 	deliveryChannel := consumer.Deliveries()
 
@@ -532,14 +665,14 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 		}
 	}
 
-	consumer.BreakConsume()
+	consumer.BreakConsume(ctx)
 
 	err := deleteQueueAndExchange(consumer.Channel().Channel, queue.Name, queue.Exchange, "doit")
 	if err != nil {
 		t.Fatalf("error deleting queue: %s", err.Error())
 	}
 
-	consumer.CloseConnection()
+	consumer.CloseConnection(ctx)
 
 	log.Printf("finishing testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
 }
@@ -547,7 +680,23 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	ctx := context.Background()
 	log.Printf("testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
+	
+	logger := slog.New(
+		slogctx.NewHandler(
+			slog.NewJSONHandler(
+				os.Stdout,
+				&slog.HandlerOptions{
+					AddSource: true,
+				},
+			).WithAttrs(
+				[]slog.Attr{
 
+				},
+			),
+			nil,
+		),
+	)
+	slog.SetDefault(logger)
 	var messages []string = []string{"test001", "test002"}
 	var expectedHeader map[string]any = map[string]any{
 		"wololo": "walala",
@@ -555,11 +704,11 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	}
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
-		RABBITMQ_PROTOCOL: "amqp",
-		RABBITMQ_HOST:     "localhost",
-		RABBITMQ_PORT:     "5672",
-		RABBITMQ_USERNAME: "guest",
-		RABBITMQ_PASSWORD: "guest",
+		PROTOCOL: "amqp",
+		HOST:     "localhost",
+		PORT:     "5672",
+		USERNAME: "guest",
+		PASSWORD: "guest",
 	}
 
 	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
@@ -582,17 +731,22 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		env,
 		"deadletter",
 		deadletter,
+		logger,
 	)
 	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		ctx,
 		env,
 		"test",
 		publisher,
 		queue,
+		0,
+		0,
+		logger,
 	)
 
-	consumer.Connect()
+	consumer.Connect(ctx)
 
-	consumer.PrepareQueue()
+	consumer.PrepareQueue(ctx)
 
 	deliveryChannel := consumer.Deliveries()
 
@@ -621,9 +775,9 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		}
 	}
 
-	//IN CASE OF FAILURE, THE TEST WOULD BLOCK
+	// IN CASE OF FAILURE, THE TEST WOULD BLOCK
 
-	//testing success
+	// testing success
 	delivery := <-deliveryChannel
 
 	if messages[0] != string(delivery.Body) {
@@ -642,9 +796,9 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		MessageId: delivery.Id,
 		Action:    constants.ACKNOWLEDGE_SUCCESS,
 	}
-	//testing success
+	// testing success
 
-	//testing requeue
+	// testing requeue
 	delivery = <-deliveryChannel
 
 	if messages[1] != string(delivery.Body) {
@@ -663,9 +817,9 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		MessageId: delivery.Id,
 		Action:    constants.ACKNOWLEDGE_REQUEUE,
 	}
-	//testing requeue
+	// testing requeue
 
-	//testing deadletter
+	// testing deadletter
 	delivery = <-deliveryChannel
 
 	if messages[1] != string(delivery.Body) {
@@ -712,7 +866,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	if reflect.DeepEqual(expectedDeadletterHeader, deliveryHeader) == false {
 		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedDeadletterHeader, deliveryHeader)
 	}
-	//testing deadletter
+	// testing deadletter
 
 	time.Sleep(time.Second)
 	err = deleteQueueAndExchange(consumer.Channel().Channel, queue.Name, queue.Exchange, "doit")
@@ -724,8 +878,8 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		t.Fatalf("error deleting queue: %s", err.Error())
 	}
 
-	consumer.BreakConsume()
-	consumer.CloseConnection()
+	consumer.BreakConsume(ctx)
+	consumer.CloseConnection(ctx)
 
 	log.Printf("finishing testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
 }
@@ -733,7 +887,23 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 	ctx := context.Background()
 	log.Printf("testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
+	
+	logger := slog.New(
+		slogctx.NewHandler(
+			slog.NewJSONHandler(
+				os.Stdout,
+				&slog.HandlerOptions{
+					AddSource: true,
+				},
+			).WithAttrs(
+				[]slog.Attr{
 
+				},
+			),
+			nil,
+		),
+	)
+	slog.SetDefault(logger)
 	var message string = "test001"
 	var expectedHeader map[string]any = map[string]any{
 		"wololo": "walala",
@@ -741,11 +911,11 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 	}
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
-		RABBITMQ_PROTOCOL: "amqp",
-		RABBITMQ_HOST:     "localhost",
-		RABBITMQ_PORT:     "5672",
-		RABBITMQ_USERNAME: "guest",
-		RABBITMQ_PASSWORD: "guest",
+		PROTOCOL: "amqp",
+		HOST:     "localhost",
+		PORT:     "5672",
+		USERNAME: "guest",
+		PASSWORD: "guest",
 	}
 
 	var queue rabbitmqdto.RabbitMQQueue = rabbitmqdto.RabbitMQQueue{
@@ -758,15 +928,19 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 	}
 
 	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		ctx,
 		env,
 		"test",
 		nil,
 		queue,
+		0,
+		0,
+		logger,
 	)
 
-	consumer.Connect()
+	consumer.Connect(ctx)
 
-	consumer.PrepareQueue()
+	consumer.PrepareQueue(ctx)
 
 	deliveryChannel := consumer.Deliveries()
 
@@ -821,8 +995,8 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 		t.Fatalf("error deleting queue: %s", err.Error())
 	}
 
-	consumer.BreakConsume()
-	consumer.CloseConnection()
+	consumer.BreakConsume(ctx)
+	consumer.CloseConnection(ctx)
 
 	log.Printf("finishing testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
 }

@@ -1,6 +1,8 @@
 package interfaces
 
 import (
+	"context"
+
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/channel"
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/connection"
 )
@@ -12,13 +14,13 @@ type Behavior interface {
 	ShareChannel(Behavior Behavior) Behavior
 	ShareConnection(Behavior Behavior) Behavior
 
-	Connect() Behavior
+	Connect(ctx context.Context) Behavior
 
-	CloseChannel()
-	CloseConnection()
+	CloseChannel(ctx context.Context)
+	CloseConnection(ctx context.Context)
 
 	Connection() *connection.RabbitMQConnection
 	Channel() *channel.RabbitMQChannel
 
-	PrepareQueue() error
+	PrepareQueue(ctx context.Context) error
 }

@@ -1,10 +1,9 @@
-// this rabbitmq package is adapting the amqp091-go lib
 package rabbitmq
 
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -14,7 +13,7 @@ import (
 /*
 Publish into RabbitMQ queue configured at RabbitMQPublisher object.
 */
-func (publisher *RabbitMQPublisher) Publish(publishing dto_pkg.BrokerPublishing) (err error) {
+func (publisher *RabbitMQPublisher) Publish(ctx context.Context, publishing dto_pkg.BrokerPublishing) (err error) {
 	var success bool
 	var confirmation *amqp.DeferredConfirmation
 
@@ -27,33 +26,33 @@ func (publisher *RabbitMQPublisher) Publish(publishing dto_pkg.BrokerPublishing)
 	}
 
 	for {
-		publisher.channel.WaitForChannel()
+		publisher.channel.WaitForChannel(ctx)
 
 		confirmation, err = publisher.channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), publisher.Queue.Exchange, publisher.Queue.AccessKey, true, false, message)
 		if err != nil {
 			if publisher.AlwaysRetry {
-				log.Printf("error publishing message at channel %s at queue %s: %s\n", publisher.channel.ChannelId, publisher.Queue.Name, err)
+				publisher.logger.ErrorContext(ctx, "error publishing", slog.Any("error", err), publisher.logGroup)
 				time.Sleep(time.Second)
 				continue
 			} else {
-				return fmt.Errorf("error publishing message at with retry possible channel %s at queue %s: %w", publisher.channel.ChannelId, publisher.Queue.Name, err)
+				return fmt.Errorf("error publishing with %s from publisher %s at channel id %s and connection id %s at queue %s: %w", "retry possible", publisher.Name, publisher.channel.ChannelId, publisher.channel.Connection().ConnectionId, publisher.Queue.Name, err)
 			}
 		}
 
 		success = confirmation.Wait()
 		if success {
-			log.Printf("SUCCESS publishing from channel id %s with delivery TAG %d at queue %s\n", publisher.channel.ChannelId, confirmation.DeliveryTag, publisher.Queue.Name)
+			publisher.logger.InfoContext(ctx, "success publishing", slog.Uint64("publish_tag", confirmation.DeliveryTag), publisher.logGroup)
 			return nil
 
 		} else {
-			log.Printf("FAILED publishing from channel id %s with delivery TAG %d at queue %s\n", publisher.channel.ChannelId, confirmation.DeliveryTag, publisher.Queue.Name)
+			publisher.logger.WarnContext(ctx, "failed publishing confirmation", slog.Uint64("publish_tag", confirmation.DeliveryTag), publisher.logGroup)
 
 			if publisher.AlwaysRetry {
-				log.Printf("error publishing message from channel %s at queue %s\n", publisher.channel.ChannelId, publisher.Queue.Name)
+				publisher.logger.ErrorContext(ctx, "failed publishing confirmation with retry", publisher.logGroup)
 				time.Sleep(time.Second)
 				continue
-			} else {
-				return fmt.Errorf("error publishing message from channel %s  with retry possible at queue %s", publisher.channel.ChannelId, publisher.Queue.Name)
+			} else {	
+				return fmt.Errorf("error at publishing confirmation with %s from publisher %s at channel id %s and connection id %s at queue %s", "retry possible", publisher.Name, publisher.channel.ChannelId, publisher.channel.Connection().ConnectionId, publisher.Queue.Name)
 			}
 		}
 	}

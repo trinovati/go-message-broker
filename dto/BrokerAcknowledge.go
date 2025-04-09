@@ -1,7 +1,11 @@
 // The dto_pkg package contains data transfer objects (DTOs) used for processing broker messages and handling document errors. It includes structures for acknowledging deliveries and reporting failed document processing.
 package dto_pkg
 
-import "github.com/trinovati/go-message-broker/v3/constants" // Internal imports
+import (
+	"context"
+
+	"github.com/trinovati/go-message-broker/v3/constants"
+) // Internal imports
 
 /*
 Carry relevant info to acknowledge a delivery.
@@ -16,4 +20,5 @@ type BrokerAcknowledge struct {
 	MessageId string
 	Action    constants.AcknowledgeAction
 	Report    BrokerPublishing
+	LoggingCtx context.Context
 }

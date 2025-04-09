@@ -1,16 +1,16 @@
-// this rabbitmq package is adapting the amqp091-go lib
 package rabbitmq
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/channel"
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/config"
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/connection"
-	"github.com/trinovati/go-message-broker/v3/RabbitMQ/dto"
+	rabbitmqdto "github.com/trinovati/go-message-broker/v3/RabbitMQ/dto"
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/interfaces"
 )
 
@@ -18,26 +18,78 @@ import (
 Adapter that handle publish to RabbitMQ.
 */
 type RabbitMQPublisher struct {
-	Queue             dto.RabbitMQQueue
+	Name              string
+	Queue             rabbitmqdto.RabbitMQQueue
 	notifyFlowChannel *chan bool
 	channel           *channel.RabbitMQChannel
 	AlwaysRetry       bool
+
+	logger   *slog.Logger
+	logGroup slog.Attr
 }
 
 /*
-Builder of RabbitMQPublisher.
+Builder of RabbitMQConsumer.
+
+env is the connection data configurations.
+
+name is a internal name for logging purposes.
+
+queue is a RabbitMQQueue dto that hold the information of the queue this object will publish to.
 */
 func NewRabbitMQPublisher(
 	env config.RABBITMQ_CONFIG,
 	name string,
-	queue dto.RabbitMQQueue,
+	queue rabbitmqdto.RabbitMQQueue,
+	logger *slog.Logger,
 ) *RabbitMQPublisher {
-	return &RabbitMQPublisher{
+	if logger == nil {
+		log.Panicf("RabbitMQPublisher object have received a null logger dependency")
+	}
+
+	var channel *channel.RabbitMQChannel = channel.NewRabbitMQChannel(env, logger)
+
+	var publisher *RabbitMQPublisher = &RabbitMQPublisher{
+		Name:              name,
 		Queue:             queue,
 		notifyFlowChannel: nil,
-		channel:           channel.NewRabbitMQChannel(env),
+		channel:           channel,
 		AlwaysRetry:       false,
+
+		logger: logger,
 	}
+
+	publisher.producePublisherLogGroup()
+
+	return publisher
+}
+
+func (publisher *RabbitMQPublisher) producePublisherLogGroup() {
+	publisher.logGroup = slog.Any(
+		"message_broker",
+		[]slog.Attr{
+			{
+				Key:   "adapter",
+				Value: slog.StringValue("RabbitMQ"),
+			},
+			{
+				Key:   "publisher",
+				Value: slog.StringValue(publisher.Name),
+			},
+			{
+				Key:   "queue",
+				Value: slog.StringValue(publisher.Queue.Name),
+			},
+			{
+				Key:   "channel_id",
+				Value: slog.StringValue(publisher.channel.ChannelId.String()),
+			},
+			{
+				Key:   "connection_id",
+				Value: slog.StringValue(publisher.channel.Connection().ConnectionId.String()),
+			},
+		},
+	)
 }
 
 /*
@@ -48,6 +100,8 @@ Using shared channel is implicit that is using the same connection too.
 func (publisher *RabbitMQPublisher) ShareChannel(Behavior interfaces.Behavior) interfaces.Behavior {
 	publisher.channel = Behavior.Channel()
 
+	publisher.producePublisherLogGroup()
+
 	return publisher
 }
 
@@ -57,15 +111,17 @@ Will force this object to use the same connection present on the basic behavior 
 func (publisher *RabbitMQPublisher) ShareConnection(Behavior interfaces.Behavior) interfaces.Behavior {
 	publisher.channel.SetConnection(Behavior.Connection())
 
+	publisher.producePublisherLogGroup()
+
 	return publisher
 }
 
 /*
 Open the amqp.Connection and amqp.Channel if not already open.
 */
-func (publisher *RabbitMQPublisher) Connect() interfaces.Behavior {
+func (publisher *RabbitMQPublisher) Connect(ctx context.Context) interfaces.Behavior {
 	if publisher.channel.IsChannelDown() {
-		publisher.channel.Connect()
+		publisher.channel.Connect(ctx)
 	}
 
 	return publisher
@@ -76,8 +132,8 @@ Close the context of this channel reference.
 
 Keep in mind that this will drop channel for all the shared objects.
 */
-func (publisher *RabbitMQPublisher) CloseChannel() {
-	publisher.channel.CloseChannel()
+func (publisher *RabbitMQPublisher) CloseChannel(ctx context.Context) {
+	publisher.channel.CloseChannel(ctx)
 }
 
 /*
@@ -86,8 +142,8 @@ Close the context of this connection reference.
 Keep in mind that this will drop connection for all the shared objects.
 Keep in mind that different channels sharing connection will be dropped as well.
 */
-func (publisher *RabbitMQPublisher) CloseConnection() {
-	publisher.channel.CloseConnection()
+func (publisher *RabbitMQPublisher) CloseConnection(ctx context.Context) {
+	publisher.channel.CloseConnection(ctx)
 }
 
 /*
@@ -111,31 +167,31 @@ In case of non-existent exchange, it will create the exchange.
 
 In case of non-existent queue, it will create the queue.
 
-In case of queue not being binded to any exchange, it will bind it to a exchange.
+In case of queue not being bind to any exchange, it will bind it to a exchange.
 */
-func (publisher *RabbitMQPublisher) PrepareQueue() (err error) {
+func (publisher *RabbitMQPublisher) PrepareQueue(ctx context.Context) (err error) {
 	var tolerance int
 
 	for tolerance = 0; publisher.AlwaysRetry || tolerance <= 5; tolerance++ {
-		publisher.channel.WaitForChannel()
+		publisher.channel.WaitForChannel(ctx)
 
 		err = publisher.channel.Channel.ExchangeDeclare(publisher.Queue.Exchange, publisher.Queue.ExchangeType, true, false, false, false, nil)
 		if err != nil {
-			log.Println(errors.Wrap(err, fmt.Sprintf("error creating RabbitMQ exchange at channel %s for queue %s", publisher.channel.ChannelId.String(), publisher.Queue.Name)))
+			publisher.logger.ErrorContext(ctx, "error creating RabbitMQ exchange", slog.Any("error", err), publisher.logGroup)
 			time.Sleep(time.Second)
 			continue
 		}
 
 		_, err = publisher.channel.Channel.QueueDeclare(publisher.Queue.Name, true, false, false, false, nil)
 		if err != nil {
-			log.Println(errors.Wrap(err, fmt.Sprintf("error creating queue at channel %s for queue %s", publisher.channel.ChannelId.String(), publisher.Queue.Name)))
+			publisher.logger.ErrorContext(ctx, "error creating queue", slog.Any("error", err), publisher.logGroup)
 			time.Sleep(time.Second)
 			continue
 		}
 
 		err = publisher.channel.Channel.QueueBind(publisher.Queue.Name, publisher.Queue.AccessKey, publisher.Queue.Exchange, false, nil)
 		if err != nil {
-			log.Println(errors.Wrap(err, fmt.Sprintf("error binding queue at channel %s for queue %s", publisher.channel.ChannelId.String(), publisher.Queue.Name)))
+			publisher.logger.ErrorContext(ctx, "error binding queue", slog.Any("error", err), publisher.logGroup)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -144,7 +200,7 @@ func (publisher *RabbitMQPublisher) PrepareQueue() (err error) {
 	}
 
 	if err == nil {
-		err = errors.New(fmt.Sprintf("could not prepare publish queue for unknown reason at channel %s for queue %s", publisher.channel.ChannelId.String(), publisher.Queue.Name))
+		err = fmt.Errorf("could not prepare publish queue %s for unknown reason from publisher %s at channel id %s and connection id %s", publisher.Queue.Name, publisher.Name, publisher.channel.ChannelId, publisher.channel.Connection().ConnectionId)
 	}
 
 	return err
