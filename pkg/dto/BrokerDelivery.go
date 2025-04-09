@@ -1,5 +1,6 @@
-// The dto_pkg package contains data transfer objects (DTOs) used for processing broker messages and handling document errors. It includes structures for acknowledging deliveries and reporting failed document processing.
-package dto_pkg
+// Package contains data transfer objects (DTOs) used for processing and handling broker deliveries and publishing.
+// It includes structures for create publishing, receiving deliveries and acknowledging deliveries.
+package dto_broker
 
 /*
 Carry the data of a delivery from the broker.

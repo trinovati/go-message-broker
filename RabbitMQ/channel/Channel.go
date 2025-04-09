@@ -1,14 +1,17 @@
+// this rabbitmq package is adapting the amqp091-go lib.
 package channel
 
 import (
 	"context"
 	"log"
+	"log/slog"
 	"time"
+
+	"github.com/trinovati/go-message-broker/v3/RabbitMQ/config"
+	"github.com/trinovati/go-message-broker/v3/RabbitMQ/connection"
 
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/trinovati/go-message-broker/v3/RabbitMQ/config"
-	"github.com/trinovati/go-message-broker/v3/RabbitMQ/connection"
 )
 
 /*
@@ -30,22 +33,58 @@ type RabbitMQChannel struct {
 	lastChannelError           *amqp.Error
 	Context                    context.Context
 	CancelContext              context.CancelFunc
+
+	logger   *slog.Logger
+	logGroup slog.Attr
 }
 
 /*
 Builder of RabbitMQChannel object.
 */
-func NewRabbitMQChannel(env config.RABBITMQ_CONFIG) *RabbitMQChannel {
-	return &RabbitMQChannel{
+func NewRabbitMQChannel(
+	env config.RABBITMQ_CONFIG,
+	logger *slog.Logger,
+) *RabbitMQChannel {
+	if logger == nil {
+		log.Panicf("RabbitMQChannel object have received a null logger dependency")
+	}
+
+	var channel *RabbitMQChannel = &RabbitMQChannel{
 		ChannelId:                  uuid.New(),
-		connection:                 connection.NewRabbitMQConnection(env),
+		connection:                 connection.NewRabbitMQConnection(env, logger),
 		Channel:                    nil,
 		isOpen:                     false,
 		closureNotificationChannel: nil,
 		lastChannelError:           nil,
 		CancelContext:              nil,
 		ChannelCount:               0,
+
+		logger: logger,
 	}
+
+	channel.produceChannelLogGroup()
+
+	return channel
+}
+
+func (c *RabbitMQChannel) produceChannelLogGroup() {
+	c.logGroup = slog.Any(
+		"message_broker",
+		[]slog.Attr{
+			{
+				Key:   "adapter",
+				Value: slog.StringValue("RabbitMQ"),
+			},
+			{
+				Key:   "channel_id",
+				Value: slog.StringValue(c.ChannelId.String()),
+			},
+			{
+				Key:   "connection_id",
+				Value: slog.StringValue(c.Connection().ConnectionId.String()),
+			},
+		},
+	)
 }
 
 /*
@@ -53,6 +92,8 @@ Setter with the purpose of share RabbitMQConnection between multiple RabbitMQCha
 */
 func (c *RabbitMQChannel) SetConnection(conn *connection.RabbitMQConnection) *RabbitMQChannel {
 	c.connection = conn
+
+	c.produceChannelLogGroup()
 
 	return c
 }
@@ -72,7 +113,7 @@ To terminate the channel, use CloseChannel() method, it will close the channel v
 
 It puts the channel in confirm mode, so any publishing done will have a response from the server.
 */
-func (c *RabbitMQChannel) Connect() *RabbitMQChannel {
+func (c *RabbitMQChannel) Connect(ctx context.Context) *RabbitMQChannel {
 	var err error
 	var channel *amqp.Channel
 
@@ -80,34 +121,34 @@ func (c *RabbitMQChannel) Connect() *RabbitMQChannel {
 	defer c.connection.Mutex.Unlock()
 
 	if c.connection.Connection == nil {
-		c.connection.Connect()
+		c.connection.Connect(ctx)
 	} else if c.isOpen {
 		return c
 	}
 
 	for {
-		c.connection.WaitForConnection()
+		c.connection.WaitForConnection(ctx)
 
 		channel, err = c.connection.Connection.Channel()
 		if err != nil {
-			log.Printf("error creating RabbitMQ channel %s: %s\n", c.ChannelId, err.Error())
+			c.logger.ErrorContext(ctx, "error creating RabbitMQ channel", slog.Any("error", err), c.logGroup)
 			time.Sleep(time.Second)
 			continue
 		}
 
 		err = channel.Confirm(false)
 		if err != nil {
-			log.Printf("error configuring channel %s with Confirm() protocol: %s\n", c.ChannelId, err.Error())
+			c.logger.ErrorContext(ctx, "error configuring channel with confirm protocol", slog.Any("error", err), c.logGroup)
 			continue
 		}
 
 		c.updateChannel(channel)
-		log.Printf("opened channel id %s with connection id %s at server %s\n", c.ChannelId.String(), c.connection.ConnectionId.String(), c.connection.Env().RABBITMQ_HOST)
+		c.logger.InfoContext(ctx, "channel successfully opened", c.logGroup)
 		c.isOpen = true
 
-		c.Context, c.CancelContext = context.WithCancel(context.Background())
+		c.Context, c.CancelContext = context.WithCancel(ctx)
 
-		go c.keepChannel()
+		go c.keepChannel(ctx)
 
 		return c
 	}
@@ -136,15 +177,14 @@ It will stop to maintain the amqp.Channel if the RabbitMQChannel signal its clos
 
 It will reconnect if receive a signal of dropped connection.
 */
-func (c *RabbitMQChannel) keepChannel() {
+func (c *RabbitMQChannel) keepChannel(ctx context.Context) {
 	select {
 	case <-c.connection.Context.Done():
-		log.Printf("connection context of channel id %s with connection id %s at server %s have been closed\n", c.ChannelId.String(), c.connection.ConnectionId.String(), c.connection.Env().RABBITMQ_HOST)
-		c.CloseChannel()
+		c.logger.InfoContext(ctx, "connection, and consequently the channel, were gracefully closed", c.logGroup)
+		c.CloseChannel(ctx)
 
 	case <-c.Context.Done():
-		log.Printf("channel context of channel id %s with connection id %s at server %s have been closed\n", c.ChannelId.String(), c.connection.ConnectionId.String(), c.connection.Env().RABBITMQ_HOST)
-		c.Channel.Close()
+		c.logger.InfoContext(ctx, "channel have been gracefully closed", c.logGroup)
 
 	case closeNotification := <-c.closureNotificationChannel:
 		c.isOpen = false
@@ -152,13 +192,13 @@ func (c *RabbitMQChannel) keepChannel() {
 
 		if closeNotification != nil {
 			c.lastChannelError = closeNotification
-			log.Printf("channel id %s with connection id %s at server %s have closed with\nreason: %s\nerror: %s\nstatus code: %d\n", c.ChannelId.String(), c.connection.ConnectionId.String(), c.connection.Env().RABBITMQ_HOST, closeNotification.Reason, closeNotification.Error(), closeNotification.Code)
+			c.logger.ErrorContext(ctx, "channel have been closed", slog.String("reason", closeNotification.Reason), slog.String("error", closeNotification.Error()), slog.Int("status", closeNotification.Code), c.logGroup)
 
 		} else {
-			log.Printf("connection of channel id %s with connection id %s at server %s have closed with no specified reason\n", c.ChannelId.String(), c.connection.ConnectionId.String(), c.connection.Env().RABBITMQ_HOST)
+			c.logger.ErrorContext(ctx, "connection have been closed with no specified reason", c.logGroup)
 		}
 
-		c.Connect()
+		c.Connect(ctx)
 	}
 }
 
@@ -167,12 +207,14 @@ Method for closing the channel via context.
 
 Keep in mind that this will affect all objects that shares channel with this one.
 */
-func (c *RabbitMQChannel) CloseChannel() {
+func (c *RabbitMQChannel) CloseChannel(ctx context.Context) {
 	c.isOpen = false
 
 	if c.CancelContext != nil {
 		c.CancelContext()
 	}
+
+	c.Channel.Close()
 }
 
 /*
@@ -181,9 +223,9 @@ Method for closing the channel and connection via context.
 Keep in mind that this will affect all objects that shares channel or connection with this one, including closing
 other non-shared channels that shares this connection.
 */
-func (c *RabbitMQChannel) CloseConnection() {
-	c.CloseChannel()
-	c.connection.CloseConnection()
+func (c *RabbitMQChannel) CloseConnection(ctx context.Context) {
+	c.CloseChannel(ctx)
+	c.connection.CloseConnection(ctx)
 }
 
 /*
@@ -196,13 +238,13 @@ func (c *RabbitMQChannel) IsChannelDown() bool {
 /*
 Block the process until the channel is open.
 */
-func (c *RabbitMQChannel) WaitForChannel() {
+func (c *RabbitMQChannel) WaitForChannel(ctx context.Context) {
 	for {
 		if c.isOpen {
 			return
 		}
 
-		log.Printf("waiting for rabbitmq channel %s\n", c.ChannelId.String())
+		c.logger.InfoContext(ctx, "waiting for rabbitmq channel", c.logGroup)
 		time.Sleep(500 * time.Millisecond)
 	}
 }

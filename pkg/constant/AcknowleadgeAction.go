@@ -11,7 +11,7 @@ Constants defined in this package:
   - ACKNOWLEDGE_REQUEUE: Indicates that the message should be requeued for later processing.
   - ACKNOWLEDGE_DEADLETTER: Indicates that the message should be moved to the dead-letter queue.
 */
-package constants
+package constant_broker
 
 /*
 AcknowledgeAction represents the action to be taken when acknowledging a message.
@@ -20,10 +20,7 @@ It is used to categorize how the acknowledgment should be processed by the syste
 type AcknowledgeAction string
 
 const (
-	// ACKNOWLEDGE_SUCCESS indicates that the message was processed successfully.
-	ACKNOWLEDGE_SUCCESS AcknowledgeAction = "success"
-	// ACKNOWLEDGE_REQUEUE indicates that the message should be requeued for later processing.
-	ACKNOWLEDGE_REQUEUE AcknowledgeAction = "requeue"
-	// ACKNOWLEDGE_DEADLETTER indicates that the message should be moved to the dead-letter queue.
-	ACKNOWLEDGE_DEADLETTER AcknowledgeAction = "deadletter"
+	ACKNOWLEDGE_SUCCESS    AcknowledgeAction = "success"    // indicates that the message was processed successfully.
+	ACKNOWLEDGE_REQUEUE    AcknowledgeAction = "requeue"    // indicates that the message should be requeued for later processing.
+	ACKNOWLEDGE_DEADLETTER AcknowledgeAction = "deadletter" // indicates that the message should be moved to the dead-letter queue.
 )

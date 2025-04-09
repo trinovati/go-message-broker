@@ -1,16 +1,17 @@
+// this rabbitmq package is adapting the amqp091-go lib.
 package connection
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"runtime"
+	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/trinovati/go-message-broker/v3/RabbitMQ/config"
+
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/trinovati/go-message-broker/v3/RabbitMQ/config"
 )
 
 /*
@@ -33,12 +34,24 @@ type RabbitMQConnection struct {
 	ConnectionCount            uint64
 	ConnectionId               uuid.UUID
 	Mutex                      *sync.Mutex
+
+	logger   *slog.Logger
+	logGroup slog.Attr
 }
 
 /*
 Builder of RabbitMQConnection object.
 */
-func NewRabbitMQConnection(env config.RABBITMQ_CONFIG) *RabbitMQConnection {
+func NewRabbitMQConnection(
+	env config.RABBITMQ_CONFIG,
+	logger *slog.Logger,
+) *RabbitMQConnection {
+	if logger == nil {
+		log.Panicf("RabbitMQConnection object have received a null logger dependency")
+	}
+
+	var connectionId uuid.UUID = uuid.New()
+
 	return &RabbitMQConnection{
 		env:                        env,
 		Connection:                 nil,
@@ -46,8 +59,23 @@ func NewRabbitMQConnection(env config.RABBITMQ_CONFIG) *RabbitMQConnection {
 		lastConnectionError:        nil,
 		closureNotificationChannel: nil,
 		ConnectionCount:            0,
-		ConnectionId:               uuid.New(),
+		ConnectionId:               connectionId,
 		Mutex:                      &sync.Mutex{},
+
+		logger: logger,
+		logGroup: slog.Any(
+			"message_broker",
+			[]slog.Attr{
+				{
+					Key:   "adapter",
+					Value: slog.StringValue("RabbitMQ"),
+				},
+				{
+					Key:   "connection_id",
+					Value: slog.StringValue(connectionId.String()),
+				},
+			},
+		),
 	}
 }
 
@@ -61,7 +89,7 @@ Create and keep alive a amqp.Connection linked to RabbitMQ connection.
 If connection is dropped for any reason it will try to remake the connection.
 To terminate the connection, use CloseConnection() method, it will close the connection via context.Done().
 */
-func (c *RabbitMQConnection) Connect() *RabbitMQConnection {
+func (c *RabbitMQConnection) Connect(ctx context.Context) *RabbitMQConnection {
 	var err error
 	var connection *amqp.Connection
 
@@ -70,21 +98,21 @@ func (c *RabbitMQConnection) Connect() *RabbitMQConnection {
 	}
 
 	for {
-		connection, err = amqp.Dial(c.env.RABBITMQ_PROTOCOL + "://" + c.env.RABBITMQ_USERNAME + ":" + c.env.RABBITMQ_PASSWORD + "@" + c.env.RABBITMQ_HOST + ":" + c.env.RABBITMQ_PORT + "/")
+		connection, err = amqp.Dial(c.env.PROTOCOL + "://" + c.env.USERNAME + ":" + c.env.PASSWORD + "@" + c.env.HOST + ":" + c.env.PORT + "/")
 		if err != nil {
-			log.Printf(fmt.Sprintf("error creating a connection to RabbitMQ server: %s: %s\n", c.env.RABBITMQ_HOST, err))
+			c.logger.ErrorContext(ctx, "error creating a connection to RabbitMQ", slog.Any("error", err), c.logGroup)
 			time.Sleep(time.Second)
 			continue
 		}
 
 		c.updateConnection(connection)
-		log.Printf("opened connection id %s at server %s\n", c.ConnectionId.String(), c.env.RABBITMQ_HOST)
+		c.logger.InfoContext(ctx, "connection successfully opened", c.logGroup)
 
 		c.isOpen = true
 
-		c.Context, c.CancelContext = context.WithCancel(context.Background())
+		c.Context, c.CancelContext = context.WithCancel(ctx)
 
-		go c.keepConnection(c.Context)
+		go c.keepConnection(ctx)
 
 		return c
 	}
@@ -113,8 +141,8 @@ It will reconnect if receive a signal of dropped connection.
 */
 func (c *RabbitMQConnection) keepConnection(ctx context.Context) {
 	select {
-	case <-ctx.Done():
-		log.Printf("connection context of connection id %s at server %s have been closed\n", c.ConnectionId.String(), c.env.RABBITMQ_HOST)
+	case <-c.Context.Done():
+		c.logger.InfoContext(ctx, "connection have been gracefully closed", c.logGroup)
 
 	case closeNotification := <-c.closureNotificationChannel:
 		c.isOpen = false
@@ -122,16 +150,14 @@ func (c *RabbitMQConnection) keepConnection(ctx context.Context) {
 
 		if closeNotification != nil {
 			c.lastConnectionError = closeNotification
-			log.Printf("connection id %s at server %s have closed with\nreason: '%s'\nerror: '%s'\nstatus code: '%d'\n", c.ConnectionId.String(), c.env.RABBITMQ_HOST, closeNotification.Reason, closeNotification.Error(), closeNotification.Code)
+			c.logger.ErrorContext(ctx, "connection have been closed", slog.String("reason", closeNotification.Reason), slog.String("error", closeNotification.Error()), slog.Int("status", closeNotification.Code), c.logGroup)
 
 		} else {
-			log.Printf("connection id %s at server %s have closed with no specified reason\n", c.ConnectionId.String(), c.env.RABBITMQ_HOST)
+			c.logger.ErrorContext(ctx, "connection have been closed with no specified reason", c.logGroup)
 		}
 
-		c.Connect()
+		c.Connect(ctx)
 	}
-
-	runtime.Goexit()
 }
 
 /*
@@ -139,12 +165,16 @@ Method for closing the connection via context.
 
 Keep in mind that this will affect all objects that shares connection with this one.
 */
-func (c *RabbitMQConnection) CloseConnection() {
+func (c *RabbitMQConnection) CloseConnection(ctx context.Context) {
+	c.logger.InfoContext(ctx, "closing connection at host", c.logGroup)
+
 	c.isOpen = false
 
 	if c.CancelContext != nil {
 		c.CancelContext()
 	}
+
+	c.Connection.Close()
 
 	c.Connection = nil
 }
@@ -159,13 +189,13 @@ func (c *RabbitMQConnection) IsConnectionDown() bool {
 /*
 Block the process until the connection is open.
 */
-func (c *RabbitMQConnection) WaitForConnection() {
+func (c *RabbitMQConnection) WaitForConnection(ctx context.Context) {
 	for {
 		if c.isOpen {
 			return
 		}
 
-		log.Println("waiting for rabbitmq connection")
+		c.logger.InfoContext(ctx, "waiting for rabbitmq connection", c.logGroup)
 		time.Sleep(500 * time.Millisecond)
 	}
 }
