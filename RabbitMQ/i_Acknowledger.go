@@ -1,10 +1,11 @@
+// this rabbitmq package is adapting the amqp091-go lib.
 package rabbitmq
 
 import (
 	"fmt"
 
-	"github.com/trinovati/go-message-broker/v3/constants"
-	dto_pkg "github.com/trinovati/go-message-broker/v3/dto"
+	constant_broker "github.com/trinovati/go-message-broker/v3/pkg/constant"
+	dto_broker "github.com/trinovati/go-message-broker/v3/pkg/dto"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -23,7 +24,7 @@ deadletter (remove from queue with negative ack and publish to another queue).
 
 Deadletter action will lose the message in case of no Publisher have been staged for the consumer.
 */
-func (consumer *RabbitMQConsumer) Acknowledge(acknowledge dto_pkg.BrokerAcknowledge) (err error) {
+func (consumer *RabbitMQConsumer) Acknowledge(acknowledge dto_broker.BrokerAcknowledge) (err error) {
 	mapObject, found := consumer.DeliveryMap.Load(acknowledge.MessageId)
 	if !found {
 		return fmt.Errorf("not found message id %s from consumer %s of queue %s at channel id %s and connection id %s", acknowledge.MessageId, consumer.Name, consumer.Queue.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId)
@@ -33,17 +34,17 @@ func (consumer *RabbitMQConsumer) Acknowledge(acknowledge dto_pkg.BrokerAcknowle
 	switch message := mapObject.(type) {
 	case amqp.Delivery:
 		switch acknowledge.Action {
-		case constants.ACKNOWLEDGE_SUCCESS:
+		case constant_broker.ACKNOWLEDGE_SUCCESS:
 			err = message.Acknowledger.Ack(message.DeliveryTag, false)
 			if err != nil {
 				return fmt.Errorf("error positive acknowledging message id %s from consumer %s of queue %s at channel id %s and connection id %s: %w", acknowledge.MessageId, consumer.Name, consumer.Queue.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId, err)
 			}
-		case constants.ACKNOWLEDGE_REQUEUE:
+		case constant_broker.ACKNOWLEDGE_REQUEUE:
 			err = message.Acknowledger.Nack(message.DeliveryTag, false, true)
 			if err != nil {
 				return fmt.Errorf("error negative acknowledging with requeue message id %s from consumer %s of queue %s at channel id %s and connection id %s: %w", acknowledge.MessageId, consumer.Name, consumer.Queue.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId, err)
 			}
-		case constants.ACKNOWLEDGE_DEADLETTER:
+		case constant_broker.ACKNOWLEDGE_DEADLETTER:
 			err = message.Acknowledger.Nack(message.DeliveryTag, false, false)
 			if err != nil {
 				return fmt.Errorf("error negative acknowledging with deadletter message id %s from consumer %s of queue %s at channel id %s and connection id %s: %w", acknowledge.MessageId, consumer.Name, consumer.Queue.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId, err)

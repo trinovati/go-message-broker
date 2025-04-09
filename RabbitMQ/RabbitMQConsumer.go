@@ -1,3 +1,4 @@
+// this rabbitmq package is adapting the amqp091-go lib.
 package rabbitmq
 
 import (
@@ -10,9 +11,9 @@ import (
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/channel"
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/config"
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/connection"
-	rabbitmqdto "github.com/trinovati/go-message-broker/v3/RabbitMQ/dto"
+	dto_rabbitmq "github.com/trinovati/go-message-broker/v3/RabbitMQ/dto"
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/interfaces"
-	dto_pkg "github.com/trinovati/go-message-broker/v3/dto"
+	dto_broker "github.com/trinovati/go-message-broker/v3/pkg/dto"
 )
 
 /*
@@ -21,9 +22,9 @@ Adapter that handle consume from RabbitMQ.
 type RabbitMQConsumer struct {
 	Name               string
 	deadletter         interfaces.Publisher
-	Queue              rabbitmqdto.RabbitMQQueue
-	DeliveryChannel    chan dto_pkg.BrokerDelivery
-	AcknowledgeChannel chan dto_pkg.BrokerAcknowledge
+	Queue              dto_rabbitmq.RabbitMQQueue
+	DeliveryChannel    chan dto_broker.BrokerDelivery
+	AcknowledgeChannel chan dto_broker.BrokerAcknowledge
 	DeliveryMap        *sync.Map
 	channel            *channel.RabbitMQChannel
 	AlwaysRetry        bool
@@ -55,7 +56,7 @@ func NewRabbitMQConsumer(
 	env config.RABBITMQ_CONFIG,
 	name string,
 	deadletter interfaces.Publisher,
-	queue rabbitmqdto.RabbitMQQueue,
+	queue dto_rabbitmq.RabbitMQQueue,
 	deliveriesBufferSize int,
 	acknowledgerBufferSize int,
 	logger *slog.Logger,
@@ -71,8 +72,8 @@ func NewRabbitMQConsumer(
 		deadletter:         deadletter,
 		Queue:              queue,
 		channel:            channel,
-		DeliveryChannel:    make(chan dto_pkg.BrokerDelivery, deliveriesBufferSize),
-		AcknowledgeChannel: make(chan dto_pkg.BrokerAcknowledge, acknowledgerBufferSize),
+		DeliveryChannel:    make(chan dto_broker.BrokerDelivery, deliveriesBufferSize),
+		AcknowledgeChannel: make(chan dto_broker.BrokerAcknowledge, acknowledgerBufferSize),
 		DeliveryMap:        &sync.Map{},
 		AlwaysRetry:        true,
 
@@ -121,7 +122,7 @@ func (consumer *RabbitMQConsumer) produceConsumerLogGroup() {
 /*
 Returns the channel that ConsumeForever() will deliver the messages.
 */
-func (consumer *RabbitMQConsumer) Deliveries() (deliveries chan dto_pkg.BrokerDelivery) {
+func (consumer *RabbitMQConsumer) Deliveries() (deliveries chan dto_broker.BrokerDelivery) {
 	return consumer.DeliveryChannel
 }
 

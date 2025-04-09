@@ -1,6 +1,6 @@
 package interfaces
 
-import "github.com/trinovati/go-message-broker/v3/port"
+import "github.com/trinovati/go-message-broker/v3/pkg/port"
 
 /*
 Publisher must implement the basic Behavior for dealing with internal control and implement the

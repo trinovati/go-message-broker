@@ -1,4 +1,4 @@
-package dto
+package dto_rabbitmq
 
 type RabbitMQQueue struct {
 	Exchange     string `json:"exchange"`

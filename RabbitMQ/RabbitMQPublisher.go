@@ -1,3 +1,4 @@
+// this rabbitmq package is adapting the amqp091-go lib.
 package rabbitmq
 
 import (
@@ -10,7 +11,7 @@ import (
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/channel"
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/config"
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/connection"
-	rabbitmqdto "github.com/trinovati/go-message-broker/v3/RabbitMQ/dto"
+	dto_rabbitmq "github.com/trinovati/go-message-broker/v3/RabbitMQ/dto"
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/interfaces"
 )
 
@@ -19,7 +20,7 @@ Adapter that handle publish to RabbitMQ.
 */
 type RabbitMQPublisher struct {
 	Name              string
-	Queue             rabbitmqdto.RabbitMQQueue
+	Queue             dto_rabbitmq.RabbitMQQueue
 	notifyFlowChannel *chan bool
 	channel           *channel.RabbitMQChannel
 	AlwaysRetry       bool
@@ -40,7 +41,7 @@ queue is a RabbitMQQueue dto that hold the information of the queue this object 
 func NewRabbitMQPublisher(
 	env config.RABBITMQ_CONFIG,
 	name string,
-	queue rabbitmqdto.RabbitMQQueue,
+	queue dto_rabbitmq.RabbitMQQueue,
 	logger *slog.Logger,
 ) *RabbitMQPublisher {
 	if logger == nil {

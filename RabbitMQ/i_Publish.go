@@ -1,3 +1,4 @@
+// this rabbitmq package is adapting the amqp091-go lib.
 package rabbitmq
 
 import (
@@ -6,14 +7,16 @@ import (
 	"log/slog"
 	"time"
 
+	dto_broker "github.com/trinovati/go-message-broker/v3/pkg/dto"
+	error_broker "github.com/trinovati/go-message-broker/v3/pkg/error"
+
 	amqp "github.com/rabbitmq/amqp091-go"
-	dto_pkg "github.com/trinovati/go-message-broker/v3/dto"
 )
 
 /*
 Publish into RabbitMQ queue configured at RabbitMQPublisher object.
 */
-func (publisher *RabbitMQPublisher) Publish(ctx context.Context, publishing dto_pkg.BrokerPublishing) (err error) {
+func (publisher *RabbitMQPublisher) Publish(ctx context.Context, publishing dto_broker.BrokerPublishing) (err error) {
 	var success bool
 	var confirmation *amqp.DeferredConfirmation
 
@@ -35,7 +38,7 @@ func (publisher *RabbitMQPublisher) Publish(ctx context.Context, publishing dto_
 				time.Sleep(time.Second)
 				continue
 			} else {
-				return fmt.Errorf("error publishing with %s from publisher %s at channel id %s and connection id %s at queue %s: %w", "retry possible", publisher.Name, publisher.channel.ChannelId, publisher.channel.Connection().ConnectionId, publisher.Queue.Name, err)
+				return fmt.Errorf("error publishing with %w from publisher %s at channel id %s and connection id %s at queue %s: %w", error_broker.ErrRetryPossible, publisher.Name, publisher.channel.ChannelId, publisher.channel.Connection().ConnectionId, publisher.Queue.Name, err)
 			}
 		}
 
@@ -51,8 +54,8 @@ func (publisher *RabbitMQPublisher) Publish(ctx context.Context, publishing dto_
 				publisher.logger.ErrorContext(ctx, "failed publishing confirmation with retry", publisher.logGroup)
 				time.Sleep(time.Second)
 				continue
-			} else {	
-				return fmt.Errorf("error at publishing confirmation with %s from publisher %s at channel id %s and connection id %s at queue %s", "retry possible", publisher.Name, publisher.channel.ChannelId, publisher.channel.Connection().ConnectionId, publisher.Queue.Name)
+			} else {
+				return fmt.Errorf("error at publishing confirmation with %w from publisher %s at channel id %s and connection id %s at queue %s", error_broker.ErrRetryPossible, publisher.Name, publisher.channel.ChannelId, publisher.channel.Connection().ConnectionId, publisher.Queue.Name)
 			}
 		}
 	}

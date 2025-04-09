@@ -1,3 +1,4 @@
+// this rabbitmq package is adapting the amqp091-go lib.
 package channel
 
 import (
