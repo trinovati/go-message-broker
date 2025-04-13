@@ -51,6 +51,8 @@ func deleteQueueAndExchange(channel *amqp.Channel, queueName string, exchangeNam
 }
 
 func TestConnectionRabbitMQ(t *testing.T) {
+	log.Printf("testing Connection for RabbitMQ\n\n")
+	ctx := context.Background()
 
 	logger := slog.New(
 		slogctx.NewHandler(
@@ -58,6 +60,7 @@ func TestConnectionRabbitMQ(t *testing.T) {
 				os.Stdout,
 				&slog.HandlerOptions{
 					AddSource: true,
+					Level:     slog.LevelDebug,
 				},
 			).WithAttrs(
 				[]slog.Attr{},
@@ -65,9 +68,7 @@ func TestConnectionRabbitMQ(t *testing.T) {
 			nil,
 		),
 	)
-	slog.SetDefault(logger)
-	log.Printf("testing Connection for RabbitMQ\n\n")
-	ctx := context.Background()
+
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
 		HOST:     "localhost",
@@ -106,60 +107,74 @@ func TestConnectionRabbitMQ(t *testing.T) {
 	consumer.Connect(ctx)
 	publisher.Connect(ctx)
 
-	if consumer.Channel().Connection().ConnectionCount != 1 {
-		t.Fatalf("error at consumer connection count.\nexpected: %d\ngot:      %d", 1, consumer.Channel().Connection().ConnectionId)
+	if consumer.Channel().Connection().TimesConnected != 1 {
+		t.Fatalf("error at consumer connection count.\nexpected: %d\ngot:      %d", 1, consumer.Channel().Connection().Id)
 	}
-	if publisher.Channel().Connection().ConnectionCount != 1 {
-		t.Fatalf("error at publisher connection count.\nexpected: %d\ngot:      %d", 1, publisher.Channel().Connection().ConnectionId)
+	if publisher.Channel().Connection().TimesConnected != 1 {
+		t.Fatalf("error at publisher connection count.\nexpected: %d\ngot:      %d", 1, publisher.Channel().Connection().Id)
 	}
 
-	if consumer.Channel().Connection().IsConnectionDown() {
+	if !consumer.Channel().Connection().IsConnected(true) {
 		t.Fatalf("connection should be up")
 	}
-	if publisher.Channel().Connection().IsConnectionDown() {
+	if !publisher.Channel().Connection().IsConnected(true) {
 		t.Fatalf("connection should be up")
 	}
 
 	consumer.Channel().Connection().Connection.Close()
 	publisher.Channel().Connection().Connection.Close()
 
-	time.Sleep(500 * time.Millisecond)
-
-	consumer.Channel().Connection().WaitForConnection(ctx)
-	publisher.Channel().Connection().WaitForConnection(ctx)
-
-	if consumer.Channel().Connection().ConnectionCount != 2 {
-		t.Fatalf("error at consumer connection count.\nexpected: %d\ngot:      %d", 2, consumer.Channel().Connection().ConnectionCount)
+	err := consumer.Channel().Connection().WaitForConnection(ctx, true)
+	if err != nil {
+		t.Fatalf("%s", err)
 	}
-	if publisher.Channel().Connection().ConnectionCount != 2 {
-		t.Fatalf("error at publisher connection count.\nexpected: %d\ngot:      %d", 2, publisher.Channel().Connection().ConnectionCount)
+	err = publisher.Channel().Connection().WaitForConnection(ctx, true)
+	if err != nil {
+		t.Fatalf("%s", err)
 	}
 
-	time.Sleep(time.Second)
+	if consumer.Channel().Connection().TimesConnected != 2 {
+		t.Fatalf("error at consumer connection count.\nexpected: %d\ngot:      %d", 2, consumer.Channel().Connection().TimesConnected)
+	}
+	if publisher.Channel().Connection().TimesConnected != 2 {
+		t.Fatalf("error at publisher connection count.\nexpected: %d\ngot:      %d", 2, publisher.Channel().Connection().TimesConnected)
+	}
+
+	consumer.Channel().Connection().Close(ctx)
+	publisher.Channel().Connection().Close(ctx)
+
+	if consumer.Channel().Connection().TimesConnected != 2 {
+		t.Fatalf("error at consumer connection count.\nexpected: %d\ngot:      %d", 2, consumer.Channel().Connection().TimesConnected)
+	}
+	if publisher.Channel().Connection().TimesConnected != 2 {
+		t.Fatalf("error at publisher connection count.\nexpected: %d\ngot:      %d", 2, publisher.Channel().Connection().TimesConnected)
+	}
+
 	consumer.CloseConnection(ctx)
 	publisher.CloseConnection(ctx)
-	time.Sleep(time.Second)
 
-	if !consumer.Channel().Connection().IsConnectionDown() {
-		t.Error("consumer connection should be down")
+	time.Sleep(600 * time.Millisecond)
+
+	if consumer.Channel().Connection().IsConnected(true) {
+		t.Fatalf("consumer connection should be down")
 	}
-	if !publisher.Channel().Connection().IsConnectionDown() {
-		t.Error("publisher connection should be down")
+	if publisher.Channel().Connection().IsConnected(true) {
+		t.Fatalf("publisher connection should be down")
 	}
 
-	if !consumer.Channel().IsChannelDown() {
-		t.Error("consumer channel should be down")
+	if consumer.Channel().IsChannelUp(true) {
+		t.Fatalf("consumer channel should be down")
 	}
-	if !publisher.Channel().IsChannelDown() {
-		t.Error("publisher channel should be down")
+	if publisher.Channel().IsChannelUp(true) {
+		t.Fatalf("publisher channel should be down")
 	}
 
 	log.Printf("finishing testing Connection for RabbitMQ\n\n")
 }
 
 func TestChannelRabbitMQ(t *testing.T) {
-	ctx := context.Background()
 	log.Printf("testing Channel for RabbitMQ\n\n")
+	ctx := context.Background()
 
 	logger := slog.New(
 		slogctx.NewHandler(
@@ -167,6 +182,7 @@ func TestChannelRabbitMQ(t *testing.T) {
 				os.Stdout,
 				&slog.HandlerOptions{
 					AddSource: true,
+					Level:     slog.LevelDebug,
 				},
 			).WithAttrs(
 				[]slog.Attr{},
@@ -174,7 +190,7 @@ func TestChannelRabbitMQ(t *testing.T) {
 			nil,
 		),
 	)
-	slog.SetDefault(logger)
+
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
 		HOST:     "localhost",
@@ -213,42 +229,60 @@ func TestChannelRabbitMQ(t *testing.T) {
 	consumer.Connect(ctx)
 	publisher.Connect(ctx)
 
-	if consumer.Channel().ChannelCount != 1 {
-		t.Fatalf("error at consumer channel.\nexpected: %d\ngot:      %d", 1, consumer.Channel().ChannelCount)
+	if consumer.Channel().TimesCreated != 1 {
+		t.Fatalf("error at consumer channel.\nexpected: %d\ngot:      %d", 1, consumer.Channel().TimesCreated)
 	}
-	if publisher.Channel().ChannelCount != 1 {
-		t.Fatalf("error at publisher channel.\nexpected: %d\ngot:      %d", 1, publisher.Channel().ChannelCount)
+	if publisher.Channel().TimesCreated != 1 {
+		t.Fatalf("error at publisher channel.\nexpected: %d\ngot:      %d", 1, publisher.Channel().TimesCreated)
 	}
-
-	if consumer.Channel().IsChannelDown() {
+	if !consumer.Channel().IsChannelUp(true) {
 		t.Fatalf("consumer channel should be up")
 	}
-	if publisher.Channel().IsChannelDown() {
+	if !publisher.Channel().IsChannelUp(true) {
 		t.Fatalf("publisher channel should be up")
 	}
 
-	publisher.Channel().Channel.Close()
 	consumer.Channel().Channel.Close()
+	publisher.Channel().Channel.Close()
 
-	consumer.Channel().WaitForChannel(ctx)
-	publisher.Channel().WaitForChannel(ctx)
-
-	if consumer.Channel().ChannelCount != 2 {
-		t.Fatalf("error at consumer channel count.\nexpected: %d\ngot:      %d", 2, consumer.Channel().ChannelCount)
+	err := consumer.Channel().WaitForChannel(ctx, true)
+	if err != nil {
+		t.Fatalf("%s", err)
 	}
-	if publisher.Channel().ChannelCount != 2 {
-		t.Fatalf("error at publisher channel count.\nexpected: %d\ngot:      %d", 2, publisher.Channel().ChannelCount)
+	err = publisher.Channel().WaitForChannel(ctx, true)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	if !consumer.Channel().IsChannelUp(true) {
+		t.Fatalf("consumer channel should be up")
+	}
+	if !publisher.Channel().IsChannelUp(true) {
+		t.Fatalf("publisher channel should be up")
+	}
+
+	if consumer.Channel().TimesCreated != 2 {
+		t.Fatalf("error at consumer channel count.\nexpected: %d\ngot:      %d", 2, consumer.Channel().TimesCreated)
+	}
+	if publisher.Channel().TimesCreated != 2 {
+		t.Fatalf("error at publisher channel count.\nexpected: %d\ngot:      %d", 2, publisher.Channel().TimesCreated)
 	}
 
 	consumer.CloseChannel(ctx)
 	publisher.CloseChannel(ctx)
-	time.Sleep(time.Second)
 
-	if !consumer.Channel().IsChannelDown() {
-		t.Error("consumer channel should be down")
+	if consumer.Channel().IsChannelUp(true) {
+		t.Fatalf("consumer channel should be down")
 	}
-	if !publisher.Channel().IsChannelDown() {
-		t.Error("publisher channel should be down")
+	if publisher.Channel().IsChannelUp(true) {
+		t.Fatalf("publisher channel should be down")
+	}
+
+	if consumer.Channel().TimesCreated != 2 {
+		t.Fatalf("error at consumer channel count.\nexpected: %d\ngot:      %d", 2, consumer.Channel().TimesCreated)
+	}
+	if publisher.Channel().TimesCreated != 2 {
+		t.Fatalf("error at publisher channel count.\nexpected: %d\ngot:      %d", 2, publisher.Channel().TimesCreated)
 	}
 
 	consumer.CloseConnection(ctx)
@@ -259,6 +293,8 @@ func TestChannelRabbitMQ(t *testing.T) {
 }
 
 func TestShareConnectionRabbitMQ(t *testing.T) {
+	log.Printf("testing ShareConnection for RabbitMQ\n\n")
+	ctx := context.Background()
 
 	logger := slog.New(
 		slogctx.NewHandler(
@@ -266,6 +302,7 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 				os.Stdout,
 				&slog.HandlerOptions{
 					AddSource: true,
+					Level:     slog.LevelDebug,
 				},
 			).WithAttrs(
 				[]slog.Attr{},
@@ -273,9 +310,6 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 			nil,
 		),
 	)
-	slog.SetDefault(logger)
-	ctx := context.Background()
-	log.Printf("testing ShareConnection for RabbitMQ\n\n")
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
@@ -312,15 +346,15 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 		logger,
 	)
 
-	publisher.ShareConnection(consumer)
+	publisher.ShareConnection(ctx, consumer)
 
 	consumer.Connect(ctx)
 	publisher.Connect(ctx)
 
-	if consumer.Channel().Connection().IsConnectionDown() {
+	if !consumer.Channel().Connection().IsConnected(true) {
 		t.Fatalf("connection should be up")
 	}
-	if publisher.Channel().Connection().IsConnectionDown() {
+	if !publisher.Channel().Connection().IsConnected(true) {
 		t.Fatalf("connection should be up")
 	}
 
@@ -333,29 +367,29 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 	}
 
 	consumer.CloseConnection(ctx)
-	time.Sleep(time.Second)
 
-	if !consumer.Channel().Connection().IsConnectionDown() {
-		t.Error("consumer connection should be down")
+	time.Sleep(600 * time.Millisecond)
+
+	if consumer.Channel().Connection().IsConnected(true) {
+		t.Fatalf("consumer connection should be down")
 	}
-	if !publisher.Channel().Connection().IsConnectionDown() {
-		t.Error("publisher connection should be down")
+	if publisher.Channel().Connection().IsConnected(true) {
+		t.Fatalf("publisher connection should be down")
 	}
 
-	if !consumer.Channel().IsChannelDown() {
-		t.Error("consumer channel should be down")
+	if consumer.Channel().IsChannelUp(true) {
+		t.Fatalf("consumer channel should be down")
 	}
-	if !publisher.Channel().IsChannelDown() {
-		t.Error("publisher channel should be down")
+	if publisher.Channel().IsChannelUp(true) {
+		t.Fatalf("publisher channel should be down")
 	}
 
 	log.Printf("finishing testing ShareConnection for RabbitMQ\n\n")
 }
 
 func TestShareChannelRabbitMQ(t *testing.T) {
-	ctx := context.Background()
-
 	log.Printf("testing ShareChannel for RabbitMQ\n\n")
+	ctx := context.Background()
 
 	logger := slog.New(
 		slogctx.NewHandler(
@@ -363,6 +397,7 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 				os.Stdout,
 				&slog.HandlerOptions{
 					AddSource: true,
+					Level:     slog.LevelDebug,
 				},
 			).WithAttrs(
 				[]slog.Attr{},
@@ -370,7 +405,7 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 			nil,
 		),
 	)
-	slog.SetDefault(logger)
+
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
 		HOST:     "localhost",
@@ -409,17 +444,17 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 	publisher.ShareChannel(consumer)
 	consumer.Connect(ctx)
 
-	if consumer.Channel().Connection().IsConnectionDown() {
+	if !consumer.Channel().Connection().IsConnected(true) {
 		t.Fatalf("connection should be up")
 	}
-	if publisher.Channel().Connection().IsConnectionDown() {
+	if !publisher.Channel().Connection().IsConnected(true) {
 		t.Fatalf("connection should be up")
 	}
 
-	if consumer.Channel().IsChannelDown() {
+	if !consumer.Channel().IsChannelUp(true) {
 		t.Fatalf("channel should be up")
 	}
-	if publisher.Channel().IsChannelDown() {
+	if !publisher.Channel().IsChannelUp(true) {
 		t.Fatalf("channel should be up")
 	}
 
@@ -432,28 +467,29 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 	}
 
 	consumer.CloseConnection(ctx)
-	time.Sleep(time.Second)
 
-	if !consumer.Channel().Connection().IsConnectionDown() {
+	time.Sleep(600 * time.Millisecond)
+
+	if consumer.Channel().Connection().IsConnected(true) {
 		t.Fatalf("connection should be down")
 	}
-	if !publisher.Channel().Connection().IsConnectionDown() {
+	if publisher.Channel().Connection().IsConnected(true) {
 		t.Fatalf("connection should be down")
 	}
 
-	if !consumer.Channel().IsChannelDown() {
+	if consumer.Channel().IsChannelUp(true) {
 		t.Fatalf("channel should be down")
 	}
-	if !publisher.Channel().IsChannelDown() {
+	if publisher.Channel().IsChannelUp(true) {
 		t.Fatalf("channel should be down")
 	}
 
 	log.Printf("finishing testing ShareChannel for RabbitMQ\n\n")
 }
 
-func TestPublishRabbitMQ(t *testing.T) {
-	ctx := context.Background()
-	log.Print("testing Publish for RabbitMQ\n\n")
+func TestChannelAndConnectionContextCancellationRabbitMQ(t *testing.T) {
+	log.Printf("testing Channel And Connection Context Cancellation for RabbitMQ\n\n")
+	ctx, cancel := context.WithCancel(context.Background())
 
 	logger := slog.New(
 		slogctx.NewHandler(
@@ -461,6 +497,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 				os.Stdout,
 				&slog.HandlerOptions{
 					AddSource: true,
+					Level:     slog.LevelDebug,
 				},
 			).WithAttrs(
 				[]slog.Attr{},
@@ -468,7 +505,114 @@ func TestPublishRabbitMQ(t *testing.T) {
 			nil,
 		),
 	)
-	slog.SetDefault(logger)
+
+	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
+		PROTOCOL: "amqp",
+		HOST:     "localhost",
+		PORT:     "5672",
+		USERNAME: "guest",
+		PASSWORD: "guest",
+	}
+
+	var queue dto_rabbitmq.RabbitMQQueue = dto_rabbitmq.RabbitMQQueue{
+		Exchange:     "",
+		ExchangeType: "",
+		Name:         "",
+		AccessKey:    "",
+		Qos:          1,
+		Purge:        true,
+	}
+
+	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		env,
+		"test",
+		queue,
+		logger,
+	)
+
+	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
+		ctx,
+		env,
+		"test",
+		publisher,
+		queue,
+		0,
+		0,
+		logger,
+	)
+
+	publisher.ShareConnection(ctx, consumer)
+
+	consumer.Connect(ctx)
+
+	time.Sleep(300 * time.Millisecond)
+
+	cancel()
+
+	time.Sleep(600 * time.Millisecond)
+
+	if consumer.IsRunning() {
+		t.Fatalf("consumer should not be running")
+	}
+
+	if consumer.IsConsuming() {
+		t.Fatalf("consumer should not be consuming")
+	}
+
+	if consumer.Channel().IsActive(true) {
+		t.Fatalf("channel should be closed")
+	}
+
+	if consumer.Channel().IsChannelUp(true) {
+		t.Fatalf("channel should not be up")
+	}
+
+	if publisher.Channel().IsActive(true) {
+		t.Fatalf("channel should be closed")
+	}
+
+	if publisher.Channel().IsChannelUp(true) {
+		t.Fatalf("channel should be up")
+	}
+
+	if consumer.Channel().Connection().IsActive(true) {
+		t.Fatalf("connection should be closed")
+	}
+
+	if consumer.Channel().Connection().IsConnected(true) {
+		t.Fatalf("connection should be down")
+	}
+
+	if publisher.Channel().Connection().IsActive(true) {
+		t.Fatalf("connection should be closed")
+	}
+
+	if publisher.Channel().Connection().IsConnected(true) {
+		t.Fatalf("connection should be down")
+	}
+
+	log.Printf("finishing testing Channel And Connection Context Cancellation for RabbitMQ\n\n")
+}
+
+func TestPublishRabbitMQ(t *testing.T) {
+	log.Print("testing Publish for RabbitMQ\n\n")
+	ctx := context.Background()
+
+	logger := slog.New(
+		slogctx.NewHandler(
+			slog.NewJSONHandler(
+				os.Stdout,
+				&slog.HandlerOptions{
+					AddSource: true,
+					Level:     slog.LevelDebug,
+				},
+			).WithAttrs(
+				[]slog.Attr{},
+			),
+			nil,
+		),
+	)
+
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
 		HOST:     "localhost",
@@ -493,7 +637,7 @@ func TestPublishRabbitMQ(t *testing.T) {
 
 	publisher.Connect(ctx)
 
-	publisher.PrepareQueue(ctx)
+	publisher.PrepareQueue(ctx, true)
 
 	_, err := publisher.Channel().Channel.QueuePurge(queue.Name, true)
 	if err != nil {
@@ -537,18 +681,17 @@ func TestPublishRabbitMQ(t *testing.T) {
 
 	err = deleteQueueAndExchange(publisher.Channel().Channel, queue.Name, queue.Exchange, "doit")
 	if err != nil {
-		t.Error("error deleting queue: " + err.Error())
+		t.Fatalf("error deleting queue: %s", err)
 	}
 
 	publisher.CloseConnection(ctx)
-	time.Sleep(time.Second)
 
 	log.Printf("finishing testing Publish for RabbitMQ\n\n")
 }
 
 func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
-	ctx := context.Background()
 	log.Printf("testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
+	ctx := context.Background()
 
 	logger := slog.New(
 		slogctx.NewHandler(
@@ -556,6 +699,7 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 				os.Stdout,
 				&slog.HandlerOptions{
 					AddSource: true,
+					Level:     slog.LevelDebug,
 				},
 			).WithAttrs(
 				[]slog.Attr{},
@@ -563,7 +707,7 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 			nil,
 		),
 	)
-	slog.SetDefault(logger)
+
 	var messages []string = []string{"test001", "test002", "test003"}
 	var expectedHeader map[string]any = map[string]any{
 		"wololo": "walala",
@@ -600,12 +744,10 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 
 	consumer.Connect(ctx)
 
-	consumer.PrepareQueue(ctx)
-
 	deliveryChannel := consumer.Deliveries()
 
 	go consumer.ConsumeForever(ctx)
-	time.Sleep(time.Second)
+	time.Sleep(600 * time.Millisecond)
 
 	for i, expectedMessage := range messages {
 		confirmation, err := consumer.Channel().Channel.PublishWithDeferredConfirmWithContext(
@@ -653,21 +795,29 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 		}
 	}
 
-	consumer.BreakConsume(ctx)
-
-	err := deleteQueueAndExchange(consumer.Channel().Channel, queue.Name, queue.Exchange, "doit")
+	amqpQueue, err := consumer.Channel().Channel.QueueDeclarePassive(queue.Name, true, false, false, false, nil)
 	if err != nil {
-		t.Fatalf("error deleting queue: %s", err.Error())
+		t.Fatalf("%s", err)
 	}
 
+	if amqpQueue.Messages != 0 {
+		t.Fatalf("expected to have no messages on queue, but still got %d", amqpQueue.Messages)
+	}
+
+	err = deleteQueueAndExchange(consumer.Channel().Channel, queue.Name, queue.Exchange, "doit")
+	if err != nil {
+		t.Fatalf("error deleting queue: %s", err)
+	}
+
+	consumer.BreakConsume(ctx)
 	consumer.CloseConnection(ctx)
 
 	log.Printf("finishing testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
 }
 
 func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
-	ctx := context.Background()
 	log.Printf("testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
+	ctx := context.Background()
 
 	logger := slog.New(
 		slogctx.NewHandler(
@@ -675,6 +825,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 				os.Stdout,
 				&slog.HandlerOptions{
 					AddSource: true,
+					Level:     slog.LevelDebug,
 				},
 			).WithAttrs(
 				[]slog.Attr{},
@@ -682,7 +833,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 			nil,
 		),
 	)
-	slog.SetDefault(logger)
+
 	var messages []string = []string{"test001", "test002"}
 	var expectedHeader map[string]any = map[string]any{
 		"wololo": "walala",
@@ -730,14 +881,13 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		logger,
 	)
 
+	publisher.ShareChannel(consumer)
 	consumer.Connect(ctx)
-
-	consumer.PrepareQueue(ctx)
 
 	deliveryChannel := consumer.Deliveries()
 
 	go consumer.ConsumeForever(ctx)
-	time.Sleep(time.Second)
+	time.Sleep(600 * time.Millisecond)
 
 	for _, expectedMessage := range messages {
 		confirmation, err := consumer.Channel().Channel.PublishWithDeferredConfirmWithContext(
@@ -827,9 +977,10 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 			Header: delivery.Header,
 			Body:   delivery.Body,
 		},
+		LoggingCtx: ctx,
 	}
 
-	time.Sleep(time.Second)
+	time.Sleep(600 * time.Millisecond)
 
 	amqpDelivery, _, err := publisher.Channel().Channel.Get(deadletter.Name, true)
 	if err != nil {
@@ -854,7 +1005,15 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	}
 	// testing deadletter
 
-	time.Sleep(time.Second)
+	amqpQueue, err := consumer.Channel().Channel.QueueDeclarePassive(queue.Name, true, false, false, false, nil)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	if amqpQueue.Messages != 0 {
+		t.Fatalf("expected to have no messages on queue, but still got %d", amqpQueue.Messages)
+	}
+
 	err = deleteQueueAndExchange(consumer.Channel().Channel, queue.Name, queue.Exchange, "doit")
 	if err != nil {
 		t.Fatalf("error deleting queue: %s", err.Error())
@@ -871,8 +1030,8 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 }
 
 func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
-	ctx := context.Background()
 	log.Printf("testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
+	ctx := context.Background()
 
 	logger := slog.New(
 		slogctx.NewHandler(
@@ -880,6 +1039,7 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 				os.Stdout,
 				&slog.HandlerOptions{
 					AddSource: true,
+					Level:     slog.LevelDebug,
 				},
 			).WithAttrs(
 				[]slog.Attr{},
@@ -887,7 +1047,7 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 			nil,
 		),
 	)
-	slog.SetDefault(logger)
+
 	var message string = "test001"
 	var expectedHeader map[string]any = map[string]any{
 		"wololo": "walala",
@@ -924,12 +1084,12 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 
 	consumer.Connect(ctx)
 
-	consumer.PrepareQueue(ctx)
+	consumer.PrepareQueue(ctx, true)
 
 	deliveryChannel := consumer.Deliveries()
 
 	go consumer.ConsumeForever(ctx)
-	time.Sleep(time.Second)
+	time.Sleep(600 * time.Millisecond)
 
 	confirmation, err := consumer.Channel().Channel.PublishWithDeferredConfirmWithContext(
 		context.Background(),
