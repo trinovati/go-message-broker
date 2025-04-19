@@ -31,17 +31,18 @@ func (consumer *RabbitMQConsumer) ConsumeForever(ctx context.Context) {
 	var channelDropSignal chan struct{} = make(chan struct{}, 1)
 	var channelUpSignal chan struct{} = make(chan struct{}, 1)
 	var incomingDeliveryChannel <-chan amqp.Delivery
-	timer := time.NewTimer(10 * time.Second)
+	var timer *time.Timer = time.NewTimer(10 * time.Second)
 	defer timer.Stop()
 
 	consumer.mutex.Lock()
 
 	if consumer.isRunning {
 		consumer.logger.WarnContext(ctx, "consumer is already running ConsumeForever", consumer.logGroup)
+		consumer.mutex.Unlock()
 		return
 	}
 
-	consumer.channel.RegisterConsumer(consumer.Id)
+	consumer.channelClosureNotify = consumer.channel.RegisterConsumer(consumer.Id)
 
 	consumer.consumerCtx, consumer.consumerCancel = context.WithCancel(ctx)
 	consumer.isRunning = true
@@ -54,13 +55,13 @@ func (consumer *RabbitMQConsumer) ConsumeForever(ctx context.Context) {
 	for {
 		select {
 		case <-consumer.consumerCtx.Done():
-			consumer.logger.InfoContext(ctx, "gracefully closing consumer due to context closure", consumer.logGroup)
+			consumer.logger.InfoContext(consumer.consumerCtx, "gracefully closing consumer due to context closure", consumer.logGroup)
 			return
 
 		default:
-			incomingDeliveryChannel, err = consumer.prepareLoopingConsumer(ctx)
+			incomingDeliveryChannel, err = consumer.prepareLoopingConsumer(consumer.consumerCtx)
 			if err != nil {
-				consumer.logger.ErrorContext(ctx, "error preparing consumer", slog.Any("error", err), consumer.logGroup)
+				consumer.logger.ErrorContext(consumer.consumerCtx, "error preparing consumer", slog.Any("error", err), consumer.logGroup)
 				continue
 			}
 		}
@@ -69,21 +70,19 @@ func (consumer *RabbitMQConsumer) ConsumeForever(ctx context.Context) {
 	}
 
 	for {
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-		timer.Reset(10 * time.Second)
-
 		select {
 		case <-consumer.consumerCtx.Done():
-			consumer.logger.InfoContext(ctx, "gracefully closing consumer due to context closure", consumer.logGroup)
+			consumer.logger.InfoContext(consumer.consumerCtx, "gracefully closing consumer due to context closure", consumer.logGroup)
 			return
 
-		case delivery := <-incomingDeliveryChannel:
+		case delivery, ok := <-incomingDeliveryChannel:
+			if !ok {
+				consumer.logger.DebugContext(consumer.consumerCtx, "incoming deliveries channel has been closed", consumer.logGroup)
+				break
+			}
+
 			if delivery.Body == nil {
+				consumer.logger.DebugContext(consumer.consumerCtx, "nil body has reached consumer", consumer.logGroup)
 				continue
 			}
 
@@ -97,66 +96,65 @@ func (consumer *RabbitMQConsumer) ConsumeForever(ctx context.Context) {
 				Acknowledger: consumer.AcknowledgeChannel,
 			}
 			continue
+		}
 
-		case <-timer.C:
-			consumer.logger.DebugContext(ctx, "checking consumer channel health", consumer.logGroup)
+		consumer.logger.DebugContext(consumer.consumerCtx, "consumer have lost access to deliveries channel", consumer.logGroup)
 
-			if !consumer.channel.IsChannelUp(true) || consumer.channelTimesCreated != consumer.channel.TimesCreated {
+		select {
+		case channelDropSignal <- struct{}{}:
+			consumer.mutex.Lock()
+			consumer.isConsuming = false
+			consumer.mutex.Unlock()
+
+		default:
+			consumer.logger.DebugContext(consumer.consumerCtx, "consumer has already signaled the dropped channel", consumer.logGroup)
+		}
+
+		for {
+			if !timer.Stop() {
 				select {
-				case channelDropSignal <- struct{}{}:
-					consumer.mutex.Lock()
-					consumer.isConsuming = false
-					consumer.mutex.Unlock()
-
+				case <-timer.C:
 				default:
-					consumer.logger.DebugContext(ctx, "consumer has already signaled the dropped channel", consumer.logGroup)
 				}
+			}
+			timer.Reset(250 * time.Millisecond)
 
-				consumer.logger.WarnContext(ctx, "consumer channel have dropped, awaiting for reconnection", consumer.logGroup)
+			select {
+			case <-consumer.consumerCtx.Done():
+				consumer.logger.InfoContext(consumer.consumerCtx, "gracefully closing consumer due to context closure", consumer.logGroup)
+				return
 
+			case <-timer.C:
+				continue
+
+			case <-channelUpSignal:
 				for {
-					if !timer.Stop() {
-						select {
-						case <-timer.C:
-						default:
-						}
-					}
-					timer.Reset(10 * time.Second)
-
 					select {
 					case <-consumer.consumerCtx.Done():
-						consumer.logger.InfoContext(ctx, "gracefully closing consumer due to context closure", consumer.logGroup)
+						consumer.logger.InfoContext(consumer.consumerCtx, "gracefully closing consumer due to context closure", consumer.logGroup)
 						return
 
-					case <-timer.C:
-						continue
-
-					case <-channelUpSignal:
-						select {
-						case <-consumer.consumerCtx.Done():
-							consumer.logger.InfoContext(ctx, "gracefully closing consumer due to context closure", consumer.logGroup)
-							consumer.BreakConsume(ctx)
-							return
-
-						default:
-							incomingDeliveryChannel, err = consumer.prepareLoopingConsumer(ctx)
-							if err != nil {
-								consumer.logger.ErrorContext(ctx, "error preparing consumer", slog.Any("error", err), consumer.logGroup)
-								continue
-							}
-
-							consumer.mutex.Lock()
-							consumer.isConsuming = true
-							consumer.mutex.Unlock()
+					default:
+						incomingDeliveryChannel, err = consumer.prepareLoopingConsumer(consumer.consumerCtx)
+						if err != nil {
+							consumer.logger.ErrorContext(consumer.consumerCtx, "error preparing consumer", slog.Any("error", err), consumer.logGroup)
+							continue
 						}
+
+						consumer.mutex.Lock()
+						consumer.isConsuming = true
+						consumer.mutex.Unlock()
 					}
 
 					break
 				}
 			}
 
-			consumer.logger.InfoContext(ctx, "consumer channel is healthy", consumer.logGroup)
+			break
 		}
+
+		consumer.logger.DebugContext(consumer.consumerCtx, "consumer channel is healthy", consumer.logGroup)
+		continue
 	}
 }
 
@@ -204,11 +202,12 @@ func (consumer *RabbitMQConsumer) amqpChannelMonitor(ctx context.Context, channe
 			return
 
 		case <-channelDropNotify:
+			consumer.logger.DebugContext(ctx, "consumer channel has been closed, waiting for recreation", consumer.logGroup)
+
 			for {
 				select {
 				case <-ctx.Done():
 					consumer.logger.InfoContext(ctx, "gracefully closing monitoring consumer channel due to context closure", consumer.logGroup)
-					consumer.BreakConsume(ctx)
 					return
 
 				default:
@@ -247,9 +246,7 @@ func (consumer *RabbitMQConsumer) prepareLoopingConsumer(ctx context.Context) (i
 			return nil, fmt.Errorf("stop preparing consumer due to context closure")
 
 		default:
-			consumer.channel.Lock()
-
-			err = consumer.channel.WaitForChannel(ctx, false)
+			err = consumer.channel.WaitForChannel(ctx, true)
 			if err != nil {
 				return nil, fmt.Errorf("error waiting for channel: %w", err)
 			}
@@ -257,21 +254,18 @@ func (consumer *RabbitMQConsumer) prepareLoopingConsumer(ctx context.Context) (i
 			err = consumer.PrepareQueue(ctx, false)
 			if err != nil {
 				consumer.logger.ErrorContext(ctx, "error preparing queue", slog.Any("error", err), consumer.logGroup)
-				time.Sleep(500 * time.Second)
+				time.Sleep(500 * time.Millisecond)
 				break
 			}
 
 			incomingDeliveryChannel, err = consumer.channel.Channel.Consume(consumer.Queue.Name, consumer.Name, false, false, false, false, nil)
 			if err != nil {
 				consumer.logger.ErrorContext(ctx, "error producing consume channel", slog.Any("error", err), consumer.logGroup)
-				time.Sleep(500 * time.Second)
+				time.Sleep(500 * time.Millisecond)
 				break
 			}
 
-			consumer.channel.Unlock()
 			return incomingDeliveryChannel, nil
 		}
-
-		consumer.channel.Unlock()
 	}
 }
