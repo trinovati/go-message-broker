@@ -135,7 +135,7 @@ func (c *RabbitMQConnection) connect(ctx context.Context) (err error) {
 			connection, err = amqp.Dial(c.env.PROTOCOL + "://" + c.env.USERNAME + ":" + c.env.PASSWORD + "@" + c.env.HOST + ":" + c.env.PORT + "/")
 			if err != nil {
 				c.logger.ErrorContext(ctx, "error creating a amqp.Connection server", slog.Any("error", err), c.logGroup)
-				time.Sleep(500 * time.Second)
+				time.Sleep(500 * time.Millisecond)
 				continue
 			}
 		}
@@ -189,7 +189,10 @@ func (c *RabbitMQConnection) keepConnection(ctx context.Context) {
 				c.logger.ErrorContext(ctx, "connection have been closed with no specified reason", c.logGroup)
 			}
 
-			c.connect(ctx)
+			err := c.connect(ctx)
+			if err != nil {
+				c.logger.ErrorContext(ctx, "error reconnecting to RabbitMQ", slog.Any("error", err))
+			}
 
 			c.mutex.Unlock()
 		}

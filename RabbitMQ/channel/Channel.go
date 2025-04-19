@@ -277,7 +277,10 @@ func (c *RabbitMQChannel) keepChannel(ctx context.Context) {
 				c.logger.ErrorContext(ctx, "channel have been closed with no specified reason", c.logGroup)
 			}
 
-			c.connect(ctx)
+			err := c.connect(ctx)
+			if err != nil {
+				c.logger.ErrorContext(ctx, "error remaking RabbitMQ channel", slog.Any("error", err))
+			}
 
 			c.Unlock()
 		}
@@ -392,10 +395,7 @@ func (c *RabbitMQChannel) IsChannelUp(lock bool) bool {
 }
 
 /*
-Block the process until the connection is open.
-
-POSSIBLE IMPROVEMENT:
-Adding *sync.Cond to control the flow instead the mutex and sleep. (performance)
+Block the process until the channel is open.
 */
 func (c *RabbitMQChannel) WaitForChannel(ctx context.Context, lock bool) error {
 	for {
