@@ -26,6 +26,6 @@ type Consumer interface {
 	BreakConsume(ctx context.Context)
 	IsConsuming() bool
 	IsRunning() bool
-	Deliveries(ctx context.Context) (deliveries chan dto_broker.BrokerDelivery)
+	Deliveries() (deliveries chan dto_broker.BrokerDelivery)
 	Acknowledge(acknowledge dto_broker.BrokerAcknowledge) error
 }
