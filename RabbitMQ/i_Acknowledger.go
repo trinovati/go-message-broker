@@ -25,9 +25,13 @@ deadletter (remove from queue with negative ack and publish to another queue).
 Deadletter action will lose the message in case of no Publisher have been staged for the consumer.
 */
 func (consumer *RabbitMQConsumer) Acknowledge(acknowledge dto_broker.BrokerAcknowledge) (err error) {
+	if acknowledge.LoggingCtx == nil {
+		consumer.logger.Warn("acknowledge have received a nil logging context", consumer.logGroup)
+	}
+
 	mapObject, found := consumer.DeliveryMap.Load(acknowledge.MessageId)
 	if !found {
-		return fmt.Errorf("not found message id %s from consumer %s of queue %s at channel id %s and connection id %s", acknowledge.MessageId, consumer.Name, consumer.Queue.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId)
+		return fmt.Errorf("not found message id %s from consumer %s of queue %s at channel id %s and connection id %s", acknowledge.MessageId, consumer.Name, consumer.Queue.Name, consumer.channel.Id, consumer.channel.Connection().Id)
 	}
 	consumer.DeliveryMap.Delete(acknowledge.MessageId)
 
@@ -37,17 +41,17 @@ func (consumer *RabbitMQConsumer) Acknowledge(acknowledge dto_broker.BrokerAckno
 		case constant_broker.ACKNOWLEDGE_SUCCESS:
 			err = message.Acknowledger.Ack(message.DeliveryTag, false)
 			if err != nil {
-				return fmt.Errorf("error positive acknowledging message id %s from consumer %s of queue %s at channel id %s and connection id %s: %w", acknowledge.MessageId, consumer.Name, consumer.Queue.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId, err)
+				return fmt.Errorf("error positive acknowledging message id %s from consumer %s of queue %s at channel id %s and connection id %s: %w", acknowledge.MessageId, consumer.Name, consumer.Queue.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
 			}
 		case constant_broker.ACKNOWLEDGE_REQUEUE:
 			err = message.Acknowledger.Nack(message.DeliveryTag, false, true)
 			if err != nil {
-				return fmt.Errorf("error negative acknowledging with requeue message id %s from consumer %s of queue %s at channel id %s and connection id %s: %w", acknowledge.MessageId, consumer.Name, consumer.Queue.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId, err)
+				return fmt.Errorf("error negative acknowledging with requeue message id %s from consumer %s of queue %s at channel id %s and connection id %s: %w", acknowledge.MessageId, consumer.Name, consumer.Queue.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
 			}
 		case constant_broker.ACKNOWLEDGE_DEADLETTER:
 			err = message.Acknowledger.Nack(message.DeliveryTag, false, false)
 			if err != nil {
-				return fmt.Errorf("error negative acknowledging with deadletter message id %s from consumer %s of queue %s at channel id %s and connection id %s: %w", acknowledge.MessageId, consumer.Name, consumer.Queue.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId, err)
+				return fmt.Errorf("error negative acknowledging with deadletter message id %s from consumer %s of queue %s at channel id %s and connection id %s: %w", acknowledge.MessageId, consumer.Name, consumer.Queue.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
 			}
 
 			if consumer.deadletter != nil {
@@ -56,12 +60,16 @@ func (consumer *RabbitMQConsumer) Acknowledge(acknowledge dto_broker.BrokerAckno
 					return fmt.Errorf("error publishing to deadletter queue of consumer %s of queue %s: %w", consumer.Name, consumer.Queue.Name, err)
 				}
 			} else {
-				consumer.logger.WarnContext(acknowledge.LoggingCtx, "DEADLETTER ACKNOWLEDGE WILL BE IGNORED DUE TO MISSING PUBLISHER AT CONSUMER", consumer.logGroup)
+				if acknowledge.LoggingCtx == nil {
+					consumer.logger.Warn("DEADLETTER ACKNOWLEDGE WILL BE IGNORED DUE TO MISSING PUBLISHER AT CONSUMER", consumer.logGroup)
+				} else {
+					consumer.logger.WarnContext(acknowledge.LoggingCtx, "DEADLETTER ACKNOWLEDGE WILL BE IGNORED DUE TO MISSING PUBLISHER AT CONSUMER", consumer.logGroup)
+				}
 			}
 		}
 
 	default:
-		return fmt.Errorf("message id %s have come with untreatable %T format from consumer %s of queue %s at channel id %s and connection id %s", acknowledge.MessageId, mapObject, consumer.Name, consumer.Queue.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId)
+		return fmt.Errorf("message id %s have come with untreatable %T format from consumer %s of queue %s at channel id %s and connection id %s", acknowledge.MessageId, mapObject, consumer.Name, consumer.Queue.Name, consumer.channel.Id, consumer.channel.Connection().Id)
 	}
 
 	return nil

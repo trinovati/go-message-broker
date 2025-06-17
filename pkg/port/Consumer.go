@@ -24,6 +24,8 @@ Acknowledge is a method to manually acknowledge a delivery that have come from C
 type Consumer interface {
 	ConsumeForever(ctx context.Context)
 	BreakConsume(ctx context.Context)
-	Deliveries(ctx context.Context) (deliveries chan dto_broker.BrokerDelivery)
+	IsConsuming() bool
+	IsRunning() bool
+	Deliveries() (deliveries chan dto_broker.BrokerDelivery)
 	Acknowledge(acknowledge dto_broker.BrokerAcknowledge) error
 }

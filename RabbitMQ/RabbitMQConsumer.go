@@ -14,20 +14,32 @@ import (
 	dto_rabbitmq "github.com/trinovati/go-message-broker/v3/RabbitMQ/dto"
 	"github.com/trinovati/go-message-broker/v3/RabbitMQ/interfaces"
 	dto_broker "github.com/trinovati/go-message-broker/v3/pkg/dto"
+
+	"github.com/google/uuid"
 )
 
 /*
 Adapter that handle consume from RabbitMQ.
 */
 type RabbitMQConsumer struct {
-	Name               string
-	deadletter         interfaces.Publisher
-	Queue              dto_rabbitmq.RabbitMQQueue
+	Name  string
+	Id    uuid.UUID
+	Queue dto_rabbitmq.RabbitMQQueue
+
+	isRunning   bool
+	isConsuming bool
+
 	DeliveryChannel    chan dto_broker.BrokerDelivery
-	AcknowledgeChannel chan dto_broker.BrokerAcknowledge
 	DeliveryMap        *sync.Map
-	channel            *channel.RabbitMQChannel
-	AlwaysRetry        bool
+	AcknowledgeChannel chan dto_broker.BrokerAcknowledge
+
+	deadletter interfaces.Publisher
+
+	channel              *channel.RabbitMQChannel
+	channelClosureNotify <-chan struct{}
+	channelTimesCreated  uint64
+
+	mutex *sync.Mutex
 
 	consumerCtx    context.Context
 	consumerCancel context.CancelFunc
@@ -48,8 +60,9 @@ deadletter is a Publisher that wil be used for acknowledges.This is optional and
 queue is a RabbitMQQueue dto that hold the information of the queue this object will consume from.
 
 deliveriesBufferSize and acknowledgerBufferSize set a buffer to the channel so it have a size limit.
-Keep in mind that buffering the channels may block the pushes until freeing a new position.
-Keep in mind that unbuffered channels can't use len() to check quantity of data waiting.
+Keep in mind that buffering the channels may block the pushes after its size is filled.
+Keep in mind that unbuffered channels block even on the first push, and can't use len() on them to
+check quantity of data waiting.
 */
 func NewRabbitMQConsumer(
 	ctx context.Context,
@@ -68,14 +81,20 @@ func NewRabbitMQConsumer(
 	var channel *channel.RabbitMQChannel = channel.NewRabbitMQChannel(env, logger)
 
 	var consumer *RabbitMQConsumer = &RabbitMQConsumer{
-		Name:               name,
-		deadletter:         deadletter,
-		Queue:              queue,
-		channel:            channel,
+		Name:  name,
+		Id:    uuid.New(),
+		Queue: queue,
+
 		DeliveryChannel:    make(chan dto_broker.BrokerDelivery, deliveriesBufferSize),
-		AcknowledgeChannel: make(chan dto_broker.BrokerAcknowledge, acknowledgerBufferSize),
 		DeliveryMap:        &sync.Map{},
-		AlwaysRetry:        true,
+		AcknowledgeChannel: make(chan dto_broker.BrokerAcknowledge, acknowledgerBufferSize),
+
+		deadletter: deadletter,
+
+		channel:             channel,
+		channelTimesCreated: 0,
+
+		mutex: &sync.Mutex{},
 
 		logger: logger,
 	}
@@ -83,7 +102,7 @@ func NewRabbitMQConsumer(
 	consumer.produceConsumerLogGroup()
 
 	if deadletter != nil {
-		consumer.ShareConnection(deadletter)
+		consumer.ShareConnection(ctx, deadletter)
 	} else {
 		consumer.logger.WarnContext(ctx, "NO DEADLETTER QUEUE CONFIGURED    DEADLETTER COMMANDS WILL BE IGNORED IN THIS CONSUMER", consumer.logGroup)
 	}
@@ -104,16 +123,20 @@ func (consumer *RabbitMQConsumer) produceConsumerLogGroup() {
 				Value: slog.StringValue(consumer.Name),
 			},
 			{
+				Key:   "consumer_id",
+				Value: slog.StringValue(consumer.Id.String()),
+			},
+			{
 				Key:   "queue",
 				Value: slog.StringValue(consumer.Queue.Name),
 			},
 			{
 				Key:   "channel_id",
-				Value: slog.StringValue(consumer.channel.ChannelId.String()),
+				Value: slog.StringValue(consumer.channel.Id.String()),
 			},
 			{
 				Key:   "connection_id",
-				Value: slog.StringValue(consumer.channel.Connection().ConnectionId.String()),
+				Value: slog.StringValue(consumer.channel.Connection().Id.String()),
 			},
 		},
 	)
@@ -126,6 +149,20 @@ func (consumer *RabbitMQConsumer) Deliveries() (deliveries chan dto_broker.Broke
 	return consumer.DeliveryChannel
 }
 
+func (consumer *RabbitMQConsumer) IsConsuming() bool {
+	consumer.mutex.Lock()
+	defer consumer.mutex.Unlock()
+
+	return consumer.isRunning && consumer.channel.IsChannelUp(true)
+}
+
+func (consumer *RabbitMQConsumer) IsRunning() bool {
+	consumer.mutex.Lock()
+	defer consumer.mutex.Unlock()
+
+	return consumer.isRunning
+}
+
 /*
 Will force this object to use the same channel present on the basic behavior of the argument.
 
@@ -136,14 +173,16 @@ func (consumer *RabbitMQConsumer) ShareChannel(behavior interfaces.Behavior) int
 
 	consumer.produceConsumerLogGroup()
 
+	consumer.channelTimesCreated = consumer.channel.TimesCreated
+
 	return consumer
 }
 
 /*
 Will force this object to use the same connection present on the basic behavior of the argument.
 */
-func (consumer *RabbitMQConsumer) ShareConnection(behavior interfaces.Behavior) interfaces.Behavior {
-	consumer.channel.SetConnection(behavior.Connection())
+func (consumer *RabbitMQConsumer) ShareConnection(ctx context.Context, behavior interfaces.Behavior) interfaces.Behavior {
+	consumer.channel.SetConnection(ctx, behavior.Connection())
 
 	consumer.produceConsumerLogGroup()
 
@@ -154,9 +193,10 @@ func (consumer *RabbitMQConsumer) ShareConnection(behavior interfaces.Behavior) 
 Open the amqp.Connection and amqp.Channel if not already open.
 */
 func (consumer *RabbitMQConsumer) Connect(ctx context.Context) interfaces.Behavior {
-	if consumer.channel.IsChannelDown() {
+	if !consumer.channel.IsActive(true) {
 		consumer.channel.Connect(ctx)
 	}
+	consumer.channelTimesCreated = consumer.channel.TimesCreated
 
 	if consumer.deadletter != nil {
 		consumer.deadletter.Connect(ctx)
@@ -173,7 +213,7 @@ Close the context of this channel reference.
 Keep in mind that this will drop channel for all the shared objects.
 */
 func (consumer *RabbitMQConsumer) CloseChannel(ctx context.Context) {
-	consumer.channel.CloseChannel(ctx)
+	consumer.channel.Close(ctx)
 }
 
 /*
@@ -207,60 +247,48 @@ In case of non-existent exchange, it will create the exchange.
 
 In case of non-existent queue, it will create the queue.
 
-In case of queue not being binded to any exchange, it will bind it to a exchange.
+In case of queue not being bind to any exchange, it will bind it to a exchange.
 
 It will set Qos to the channel.
 
 It will purge the queue before consuming case ordered to.
 */
-func (consumer *RabbitMQConsumer) PrepareQueue(ctx context.Context) (err error) {
-	if consumer.channel.IsChannelDown() {
-		return fmt.Errorf("channel dropped before declaring exchange %s from consumer %s at channel id %s and connection id %s", consumer.Queue.Exchange, consumer.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId)
+func (consumer *RabbitMQConsumer) PrepareQueue(ctx context.Context, lock bool) (err error) {
+	if !consumer.channel.IsChannelUp(lock) {
+		return fmt.Errorf("channel dropped before declaring exchange %s from consumer %s at channel id %s and connection id %s", consumer.Queue.Exchange, consumer.Name, consumer.channel.Id, consumer.channel.Connection().Id)
 	}
 
 	err = consumer.channel.Channel.ExchangeDeclare(consumer.Queue.Exchange, consumer.Queue.ExchangeType, true, false, false, false, nil)
 	if err != nil {
-		return fmt.Errorf("error declaring RabbitMQ exchange %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Exchange, consumer.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId, err)
-	}
-
-	if consumer.channel.IsChannelDown() {
-		return fmt.Errorf("channel dropped before declaring queue %s from consumer %s at channel id %s and connection id %s", consumer.Queue.Name, consumer.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId)
+		return fmt.Errorf("error declaring RabbitMQ exchange %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Exchange, consumer.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
 	}
 
 	_, err = consumer.channel.Channel.QueueDeclare(consumer.Queue.Name, true, false, false, false, nil)
 	if err != nil {
-		return fmt.Errorf("error declaring queue %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Name, consumer.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId, err)
-	}
-
-	if consumer.channel.IsChannelDown() {
-		return fmt.Errorf("channel dropped before binding of queue %s from consumer %s at channel id %s and connection id %s", consumer.Queue.Name, consumer.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId)
+		return fmt.Errorf("error declaring queue %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Name, consumer.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
 	}
 
 	err = consumer.channel.Channel.QueueBind(consumer.Queue.Name, consumer.Queue.AccessKey, consumer.Queue.Exchange, false, nil)
 	if err != nil {
-		return fmt.Errorf("error binding queue %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Name, consumer.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId, err)
+		return fmt.Errorf("error binding queue %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Name, consumer.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
 	}
 
 	err = consumer.channel.Channel.Qos(consumer.Queue.Qos, 0, false)
 	if err != nil {
-		return fmt.Errorf("error setting qos of %d for queue %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Qos, consumer.Queue.Name, consumer.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId, err)
+		return fmt.Errorf("error setting qos of %d for queue %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Qos, consumer.Queue.Name, consumer.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
 	}
 
 	if consumer.Queue.Purge {
-		if consumer.channel.IsChannelDown() {
-			return fmt.Errorf("channel dropped before purging queue %s from consumer %s at channel id %s and connection id %s", consumer.Queue.Name, consumer.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId)
-		}
-
 		_, err = consumer.channel.Channel.QueuePurge(consumer.Queue.Name, true)
 		if err != nil {
-			return fmt.Errorf("error purging queue %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Name, consumer.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId, err)
+			return fmt.Errorf("error purging queue %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Name, consumer.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
 		}
 	}
 
 	if consumer.deadletter != nil {
-		err = consumer.deadletter.PrepareQueue(ctx)
+		err = consumer.deadletter.PrepareQueue(ctx, lock)
 		if err != nil {
-			return fmt.Errorf("error preparing deadletter queue %s from publisher %s at channel id %s and connection id %s: %w", consumer.Queue.Name, consumer.Name, consumer.channel.ChannelId, consumer.channel.Connection().ConnectionId, err)
+			return fmt.Errorf("error preparing deadletter queue %s from publisher %s at channel id %s and connection id %s: %w", consumer.Queue.Name, consumer.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
 		}
 	} else {
 		consumer.logger.WarnContext(ctx, "NO DEADLETTER QUEUE PREPARED    DEADLETTER COMMANDS WILL BE IGNORED BY THIS CONSUMER", consumer.logGroup)
