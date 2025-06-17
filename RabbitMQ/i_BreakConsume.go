@@ -1,11 +1,22 @@
-// this rabbitmq package is adapting the amqp091-go lib
 package rabbitmq
+
+import "context"
 
 /*
 Signal to ConsumeForever() to stop its process.
 */
-func (consumer *RabbitMQConsumer) BreakConsume() {
-	if consumer.consumerCtx != nil {
+func (consumer *RabbitMQConsumer) BreakConsume(ctx context.Context) {
+	consumer.mutex.Lock()
+
+	if consumer.consumerCancel != nil {
 		consumer.consumerCancel()
+		consumer.consumerCancel = nil
 	}
+
+	consumer.isConsuming = false
+	consumer.isRunning = false
+
+	consumer.channel.UnregisterConsumer(ctx, consumer.Id)
+
+	consumer.mutex.Unlock()
 }
