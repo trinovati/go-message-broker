@@ -83,8 +83,11 @@ func (consumer *RabbitMQConsumer) Acknowledge(acknowledge dto_broker.BrokerAckno
 }
 func normalizeMessage(input []byte) ([]byte, error) {
 	var raw map[string]any
+
+	// Quick check: is this valid JSON?
 	if err := json.Unmarshal(input, &raw); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal input: %w", err)
+		// If not JSON, just return original input untouched
+		return input, nil
 	}
 
 	standardFields := map[string]any{}
@@ -112,7 +115,7 @@ func normalizeMessage(input []byte) ([]byte, error) {
 		"timestamp": standardFields["timestamp"],
 		"service":   standardFields["service"],
 		"error":     standardFields["error"],
-		"data":      string(messageJSON),
+		"message":   string(messageJSON),
 	}
 
 	output, err := json.Marshal(result)
