@@ -2,7 +2,7 @@
 package rabbitmq
 
 import (
-	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 
@@ -82,51 +82,67 @@ func (consumer *RabbitMQConsumer) Acknowledge(acknowledge dto_broker.BrokerAckno
 	return nil
 }
 func normalizeMessage(input []byte) ([]byte, error) {
-	var raw map[string]any
+	var raw map[string]interface{}
 
-	// Quick check: is this valid JSON?
+	
 	if err := json.Unmarshal(input, &raw); err != nil {
-		// If not JSON, just return original input untouched
-		return input, nil
+		return input, nil 
 	}
 
+	
 	standardFields := map[string]any{}
-	messageFields := map[string]any{}
+
+	dataFields := map[string]any{}
 	standardKeys := map[string]bool{
 		"timestamp": true,
 		"service":   true,
 		"error":     true,
+		"message":   true, 
 	}
 
+	var inputMessageBase64 string
+
 	for k, v := range raw {
-		if standardKeys[k] {
+		switch {
+		case k == "message":
+			
+			msgBytes, err := json.Marshal(v)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal message field: %w", err)
+			}
+			inputMessageBase64 = base64.StdEncoding.EncodeToString(msgBytes)
+
+		case standardKeys[k]:
 			standardFields[k] = v
-		} else {
-			messageFields[k] = v
+
+		default:
+			dataFields[k] = v
 		}
 	}
 
-	messageJSON, err := json.Marshal(messageFields)
+	
+	dataBytes, err := json.Marshal(dataFields)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal message field: %w", err)
+		return nil, fmt.Errorf("failed to marshal data fields: %w", err)
 	}
+	dataBase64 := base64.StdEncoding.EncodeToString(dataBytes)
+
 
 	result := map[string]interface{}{
-		"timestamp": standardFields["timestamp"],
-		"service":   standardFields["service"],
-		"error":     standardFields["error"],
-		"message":   string(messageJSON),
+		"timestamp":     standardFields["timestamp"],
+		"service":       standardFields["service"],
+		"error":         standardFields["error"],
+		"input_message": inputMessageBase64,
+		"data":          dataBase64,
 	}
+
 
 	output, err := json.Marshal(result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal final result: %w", err)
 	}
 
-	var prettyOutput bytes.Buffer
-	if err := json.Indent(&prettyOutput, output, "", "  "); err != nil {
-		return output, nil
-	}
 
-	return prettyOutput.Bytes(), nil
+
+	return output, nil
 }
