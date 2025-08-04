@@ -346,7 +346,7 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 		logger,
 	)
 
-	publisher.ShareConnection(ctx, consumer)
+	publisher.ShareConnection(consumer)
 
 	consumer.Connect(ctx)
 	publisher.Connect(ctx)
@@ -489,7 +489,7 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 
 func TestChannelAndConnectionContextCancellationRabbitMQ(t *testing.T) {
 	log.Printf("testing Channel And Connection Context Cancellation for RabbitMQ\n\n")
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx := context.Background()
 
 	logger := slog.New(
 		slogctx.NewHandler(
@@ -541,13 +541,13 @@ func TestChannelAndConnectionContextCancellationRabbitMQ(t *testing.T) {
 		logger,
 	)
 
-	publisher.ShareConnection(ctx, consumer)
+	publisher.ShareConnection(consumer)
 
 	consumer.Connect(ctx)
 
 	time.Sleep(300 * time.Millisecond)
 
-	cancel()
+	consumer.CloseConnection(ctx)
 
 	time.Sleep(600 * time.Millisecond)
 

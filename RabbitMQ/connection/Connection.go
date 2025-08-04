@@ -76,6 +76,8 @@ func NewRabbitMQConnection(
 
 		mutex: &sync.Mutex{},
 
+		ctx: context.Background(),
+
 		logger: logger,
 		logGroup: slog.Any(
 			"message_broker",
@@ -118,36 +120,45 @@ func (c *RabbitMQConnection) Connect(ctx context.Context) (err error) {
 
 	c.isActive = true
 
-	go c.keepConnection(ctx)
+	go c.keepConnection()
 
 	return nil
 }
 
 func (c *RabbitMQConnection) connect(ctx context.Context) (err error) {
 	var connection *amqp.Connection
+	var retries int = 5
 
-	for {
+	for attempt := range retries {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("stop connecting due to context closure")
 
+		case <-c.ctx.Done():
+			return fmt.Errorf("stop connecting due to graceful connection closure")
+
 		default:
 			connection, err = amqp.Dial(c.env.PROTOCOL + "://" + c.env.USERNAME + ":" + c.env.PASSWORD + "@" + c.env.HOST + ":" + c.env.PORT + "/")
 			if err != nil {
-				c.logger.ErrorContext(ctx, "error creating a amqp.Connection server", slog.Any("error", err), c.logGroup)
+				c.logger.ErrorContext(c.ctx, "error creating a amqp.Connection server", slog.Any("error", err), c.logGroup)
 				time.Sleep(500 * time.Millisecond)
+
+				if attempt <= retries {
+					return fmt.Errorf("error creating a amqp.Connection server host %s: %w", c.env.HOST, err)
+				}
+
 				continue
 			}
 		}
 
-		c.logger.InfoContext(ctx, "connection successfully opened", c.logGroup)
+		c.logger.InfoContext(c.ctx, "connection successfully opened", c.logGroup)
 		break
 	}
 
+	c.ctx, c.cancelCtx = context.WithCancel(ctx)
 	c.amqpClosureNotify = connection.NotifyClose(make(chan *amqp.Error, 1))
 	c.Connection = connection
 	c.TimesConnected++
-	c.ctx, c.cancelCtx = context.WithCancel(ctx)
 	c.isOpen = true
 
 	return nil
@@ -160,14 +171,14 @@ It will close the connection if the RabbitMQConnection signal its closure.
 
 It will reconnect if receive a signal of dropped connection.
 */
-func (c *RabbitMQConnection) keepConnection(ctx context.Context) {
+func (c *RabbitMQConnection) keepConnection() {
 	for {
 		select {
 		case <-c.ctx.Done():
-			c.logger.InfoContext(ctx, "closing keep connection worker", c.logGroup)
+			c.logger.InfoContext(c.ctx, "closing keep connection worker", c.logGroup)
 
 			c.mutex.Lock()
-			c.close(ctx)
+			c.close(c.ctx)
 			c.mutex.Unlock()
 			return
 
@@ -183,15 +194,15 @@ func (c *RabbitMQConnection) keepConnection(ctx context.Context) {
 
 			if closureNotification != nil {
 				c.amqpLastError = closureNotification
-				c.logger.ErrorContext(ctx, "connection have been closed", slog.String("reason", closureNotification.Reason), slog.String("error", closureNotification.Error()), slog.Int("status", closureNotification.Code), c.logGroup)
+				c.logger.ErrorContext(c.ctx, "connection have been closed", slog.String("reason", closureNotification.Reason), slog.String("error", closureNotification.Error()), slog.Int("status", closureNotification.Code), c.logGroup)
 
 			} else {
-				c.logger.ErrorContext(ctx, "connection have been closed with no specified reason", c.logGroup)
+				c.logger.ErrorContext(c.ctx, "connection have been closed with no specified reason", c.logGroup)
 			}
 
-			err := c.connect(ctx)
+			err := c.connect(c.ctx)
 			if err != nil {
-				c.logger.ErrorContext(ctx, "error reconnecting to RabbitMQ", slog.Any("error", err))
+				c.logger.ErrorContext(c.ctx, "error reconnecting to RabbitMQ", slog.Any("error", err))
 			}
 
 			c.mutex.Unlock()
@@ -221,7 +232,7 @@ func (c *RabbitMQConnection) Close(ctx context.Context) {
 }
 
 func (c *RabbitMQConnection) close(ctx context.Context) {
-	c.logger.InfoContext(ctx, "closing connection", c.logGroup)
+	c.logger.InfoContext(c.ctx, "closing connection", c.logGroup)
 
 	if c.Connection != nil {
 		c.isOpen = false
@@ -229,7 +240,7 @@ func (c *RabbitMQConnection) close(ctx context.Context) {
 
 		err := c.Connection.Close()
 		if err != nil {
-			c.logger.WarnContext(ctx, "error while closing connection (should treat as closed regardless)", slog.Any("error", err), c.logGroup)
+			c.logger.WarnContext(c.ctx, "error while closing connection (should treat as closed regardless)", slog.Any("error", err), c.logGroup)
 		}
 
 		c.Connection = nil
@@ -252,7 +263,7 @@ func (c *RabbitMQConnection) RegisterChannel(id uuid.UUID) (closureNotification 
 	return c.channels[len(c.channels)-1].ClosureNotification
 }
 
-func (c *RabbitMQConnection) UnregisterChannel(ctx context.Context, id uuid.UUID) {
+func (c *RabbitMQConnection) UnregisterChannel(id uuid.UUID) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -263,7 +274,7 @@ func (c *RabbitMQConnection) UnregisterChannel(ctx context.Context, id uuid.UUID
 		}
 	}
 
-	c.logger.WarnContext(ctx, fmt.Sprintf("no registered channel found with id %s", id), c.logGroup)
+	c.logger.WarnContext(c.ctx, fmt.Sprintf("no registered channel found with id %s", id), c.logGroup)
 }
 
 func (c *RabbitMQConnection) BroadcastClosure() {
@@ -300,8 +311,12 @@ func (c *RabbitMQConnection) WaitForConnection(ctx context.Context, lock bool) e
 	for {
 		select {
 		case <-ctx.Done():
-			c.logger.InfoContext(ctx, "context canceled while waiting for RabbitMQ connection", c.logGroup)
-			return nil
+			c.logger.InfoContext(c.ctx, "context canceled while waiting for RabbitMQ connection", c.logGroup)
+			return fmt.Errorf("context canceled while waiting for RabbitMQ connection id %s", c.Id)
+
+		case <-c.ctx.Done():
+			c.logger.InfoContext(c.ctx, "closed connection while waiting for RabbitMQ connection", c.logGroup)
+			return fmt.Errorf("closed connection while waiting for RabbitMQ connection id %s: %w", c.Id, error_broker.ErrClosedConnection)
 
 		default:
 			if c.IsConnected(lock) {
@@ -309,10 +324,10 @@ func (c *RabbitMQConnection) WaitForConnection(ctx context.Context, lock bool) e
 			}
 
 			if !c.IsActive(lock) {
-				c.logger.WarnContext(ctx, "waiting on a closed RabbitMQ connection", c.logGroup)
+				c.logger.WarnContext(c.ctx, "waiting on a closed RabbitMQ connection", c.logGroup)
 				return fmt.Errorf("waiting on a closed RabbitMQ connection id %s: %w", c.Id, error_broker.ErrClosedConnection)
 			} else {
-				c.logger.InfoContext(ctx, "waiting for RabbitMQ connection", c.logGroup)
+				c.logger.InfoContext(c.ctx, "waiting for RabbitMQ connection", c.logGroup)
 			}
 
 			time.Sleep(500 * time.Millisecond)

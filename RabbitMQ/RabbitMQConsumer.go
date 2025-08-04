@@ -102,7 +102,7 @@ func NewRabbitMQConsumer(
 	consumer.produceConsumerLogGroup()
 
 	if deadletter != nil {
-		consumer.ShareConnection(ctx, deadletter)
+		consumer.ShareConnection(deadletter)
 	} else {
 		consumer.logger.WarnContext(ctx, "NO DEADLETTER QUEUE CONFIGURED    DEADLETTER COMMANDS WILL BE IGNORED IN THIS CONSUMER", consumer.logGroup)
 	}
@@ -181,8 +181,8 @@ func (consumer *RabbitMQConsumer) ShareChannel(behavior interfaces.Behavior) int
 /*
 Will force this object to use the same connection present on the basic behavior of the argument.
 */
-func (consumer *RabbitMQConsumer) ShareConnection(ctx context.Context, behavior interfaces.Behavior) interfaces.Behavior {
-	consumer.channel.SetConnection(ctx, behavior.Connection())
+func (consumer *RabbitMQConsumer) ShareConnection(behavior interfaces.Behavior) interfaces.Behavior {
+	consumer.channel.SetConnection(behavior.Connection())
 
 	consumer.produceConsumerLogGroup()
 

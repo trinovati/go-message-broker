@@ -34,7 +34,7 @@ func (publisher *RabbitMQPublisher) Publish(ctx context.Context, publishing dto_
 		return fmt.Errorf("error publishing from publisher %s at channel id %s and connection id %s at queue %s: %w", publisher.Name, publisher.channel.Id, publisher.channel.Connection().Id, publisher.Queue.Name, err)
 	}
 
-	confirmation, err = publisher.channel.Channel.PublishWithDeferredConfirmWithContext(context.Background(), publisher.Queue.Exchange, publisher.Queue.AccessKey, true, false, message)
+	confirmation, err = publisher.channel.Channel.PublishWithDeferredConfirmWithContext(ctx, publisher.Queue.Exchange, publisher.Queue.AccessKey, true, false, message)
 	if err != nil {
 		publisher.logger.ErrorContext(ctx, "error publishing", slog.Any("error", err), publisher.logGroup)
 

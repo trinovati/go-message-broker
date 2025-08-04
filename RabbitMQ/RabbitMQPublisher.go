@@ -118,8 +118,8 @@ func (publisher *RabbitMQPublisher) ShareChannel(Behavior interfaces.Behavior) i
 /*
 Will force this object to use the same connection present on the basic behavior of the argument.
 */
-func (publisher *RabbitMQPublisher) ShareConnection(ctx context.Context, Behavior interfaces.Behavior) interfaces.Behavior {
-	publisher.channel.SetConnection(ctx, Behavior.Connection())
+func (publisher *RabbitMQPublisher) ShareConnection(Behavior interfaces.Behavior) interfaces.Behavior {
+	publisher.channel.SetConnection(Behavior.Connection())
 
 	publisher.producePublisherLogGroup()
 
