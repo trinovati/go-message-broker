@@ -3,10 +3,7 @@ package testing
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"log"
-	"log/slog"
-	"os"
+	"fmt"
 	"reflect"
 	"strconv"
 	"testing"
@@ -19,7 +16,6 @@ import (
 	dto_broker "github.com/trinovati/go-message-broker/v3/pkg/dto"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	slogctx "github.com/veqryn/slog-context"
 )
 
 /*
@@ -29,45 +25,29 @@ FOR TEST PURPOSES ONLY!!!
 Delete a queue and a exchange.
 safePassword asserts that you're sure of it.
 */
-
 func deleteQueueAndExchange(channel *amqp.Channel, queueName string, exchangeName string, safePassword string) (err error) {
 
 	if safePassword == "doit" {
 		_, err = channel.QueueDelete(queueName, false, false, false)
 		if err != nil {
-			return errors.New("can't delete queue: " + err.Error())
+			return fmt.Errorf("can't delete queue %s: %w", queueName, err)
 		}
 
 		err = channel.ExchangeDelete(exchangeName, false, false)
 		if err != nil {
-			return errors.New("can't delete exchange: " + err.Error())
+			return fmt.Errorf("can't delete exchange %s: %w", exchangeName, err)
 		}
 
 	} else {
-		return errors.New("can't delete: you seem not sure of it")
+		return fmt.Errorf("can't delete: you seem not sure of it")
 	}
 
 	return nil
 }
 
 func TestConnectionRabbitMQ(t *testing.T) {
-	log.Printf("testing Connection for RabbitMQ\n\n")
+	t.Logf("testing Connection for RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
@@ -94,14 +74,15 @@ func TestConnectionRabbitMQ(t *testing.T) {
 		queue,
 		0,
 		0,
-		logger,
+		nil,
 	)
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		ctx,
 		env,
 		"test",
 		queue,
-		logger,
+		nil,
 	)
 
 	consumer.Connect(ctx)
@@ -169,27 +150,12 @@ func TestConnectionRabbitMQ(t *testing.T) {
 		t.Fatalf("publisher channel should be down")
 	}
 
-	log.Printf("finishing testing Connection for RabbitMQ\n\n")
+	t.Logf("finishing testing Connection for RabbitMQ\n\n")
 }
 
 func TestChannelRabbitMQ(t *testing.T) {
-	log.Printf("testing Channel for RabbitMQ\n\n")
+	t.Logf("testing Channel for RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
@@ -216,14 +182,15 @@ func TestChannelRabbitMQ(t *testing.T) {
 		queue,
 		0,
 		0,
-		logger,
+		nil,
 	)
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		ctx,
 		env,
 		"test",
 		queue,
-		logger,
+		nil,
 	)
 
 	consumer.Connect(ctx)
@@ -289,27 +256,12 @@ func TestChannelRabbitMQ(t *testing.T) {
 	publisher.CloseConnection(ctx)
 	time.Sleep(time.Second)
 
-	log.Printf("finishing testing Channel for RabbitMQ\n\n")
+	t.Logf("finishing testing Channel for RabbitMQ\n\n")
 }
 
 func TestShareConnectionRabbitMQ(t *testing.T) {
-	log.Printf("testing ShareConnection for RabbitMQ\n\n")
+	t.Logf("testing ShareConnection for RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
@@ -336,17 +288,18 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 		queue,
 		0,
 		0,
-		logger,
+		nil,
 	)
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		ctx,
 		env,
 		"test",
 		queue,
-		logger,
+		nil,
 	)
 
-	publisher.ShareConnection(ctx, consumer)
+	publisher.ShareConnection(consumer)
 
 	consumer.Connect(ctx)
 	publisher.Connect(ctx)
@@ -384,27 +337,12 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 		t.Fatalf("publisher channel should be down")
 	}
 
-	log.Printf("finishing testing ShareConnection for RabbitMQ\n\n")
+	t.Logf("finishing testing ShareConnection for RabbitMQ\n\n")
 }
 
 func TestShareChannelRabbitMQ(t *testing.T) {
-	log.Printf("testing ShareChannel for RabbitMQ\n\n")
+	t.Logf("testing ShareChannel for RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
@@ -431,14 +369,15 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 		queue,
 		0,
 		0,
-		logger,
+		nil,
 	)
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		ctx,
 		env,
 		"test",
 		queue,
-		logger,
+		nil,
 	)
 
 	publisher.ShareChannel(consumer)
@@ -484,27 +423,12 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 		t.Fatalf("channel should be down")
 	}
 
-	log.Printf("finishing testing ShareChannel for RabbitMQ\n\n")
+	t.Logf("finishing testing ShareChannel for RabbitMQ\n\n")
 }
 
 func TestChannelAndConnectionContextCancellationRabbitMQ(t *testing.T) {
-	log.Printf("testing Channel And Connection Context Cancellation for RabbitMQ\n\n")
-	ctx, cancel := context.WithCancel(context.Background())
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
+	t.Logf("testing Channel And Connection Context Cancellation for RabbitMQ\n\n")
+	ctx := context.Background()
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
@@ -524,10 +448,11 @@ func TestChannelAndConnectionContextCancellationRabbitMQ(t *testing.T) {
 	}
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		ctx,
 		env,
 		"test",
 		queue,
-		logger,
+		nil,
 	)
 
 	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
@@ -538,16 +463,16 @@ func TestChannelAndConnectionContextCancellationRabbitMQ(t *testing.T) {
 		queue,
 		0,
 		0,
-		logger,
+		nil,
 	)
 
-	publisher.ShareConnection(ctx, consumer)
+	publisher.ShareConnection(consumer)
 
 	consumer.Connect(ctx)
 
 	time.Sleep(300 * time.Millisecond)
 
-	cancel()
+	consumer.CloseConnection(ctx)
 
 	time.Sleep(600 * time.Millisecond)
 
@@ -591,27 +516,12 @@ func TestChannelAndConnectionContextCancellationRabbitMQ(t *testing.T) {
 		t.Fatalf("connection should be down")
 	}
 
-	log.Printf("finishing testing Channel And Connection Context Cancellation for RabbitMQ\n\n")
+	t.Logf("finishing testing Channel And Connection Context Cancellation for RabbitMQ\n\n")
 }
 
 func TestPublishRabbitMQ(t *testing.T) {
-	log.Print("testing Publish for RabbitMQ\n\n")
+	t.Logf("testing Publish for RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
@@ -629,17 +539,21 @@ func TestPublishRabbitMQ(t *testing.T) {
 	}
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		ctx,
 		env,
 		"test",
 		queue,
-		logger,
+		nil,
 	)
 
 	publisher.Connect(ctx)
 
-	publisher.PrepareQueue(ctx, true)
+	err := publisher.PrepareQueue(ctx, true)
+	if err != nil {
+		t.Fatalf("error preparing queue: %s", err)
+	}
 
-	_, err := publisher.Channel().Channel.QueuePurge(queue.Name, true)
+	_, err = publisher.Channel().Channel.QueuePurge(queue.Name, true)
 	if err != nil {
 		t.Fatalf("error purging the queue: %s", err.Error())
 	}
@@ -686,27 +600,12 @@ func TestPublishRabbitMQ(t *testing.T) {
 
 	publisher.CloseConnection(ctx)
 
-	log.Printf("finishing testing Publish for RabbitMQ\n\n")
+	t.Logf("finishing testing Publish for RabbitMQ\n\n")
 }
 
 func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
-	log.Printf("testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
+	t.Logf("testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var messages []string = []string{"test001", "test002", "test003"}
 	var expectedHeader map[string]any = map[string]any{
@@ -737,9 +636,9 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 		"test",
 		nil,
 		queue,
-		0,
-		0,
-		logger,
+		10,
+		10,
+		nil,
 	)
 
 	consumer.Connect(ctx)
@@ -770,18 +669,31 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 			t.Fatalf("publishing confirmation failed on queue %s with delivery TAG %d", queue.Name, confirmation.DeliveryTag)
 		}
 
+		time.Sleep(600 * time.Millisecond)
+
+		if len(deliveryChannel) != 1 {
+			t.Fatalf("expected to have 1 message at delivery channel, but have %d", len(deliveryChannel))
+		}
+
 		delivery := <-deliveryChannel
 
-		if expectedMessage != string(delivery.Body) {
-			t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", expectedMessage, string(delivery.Body))
+		var expectedDelivery dto_broker.BrokerDelivery = dto_broker.BrokerDelivery{
+			Id:     strconv.Itoa(i + 1),
+			Header: expectedHeader,
+			Body:   []byte(expectedMessage),
+			ConsumerDetail: map[string]any{
+				"rabbitmq_queue": dto_rabbitmq.RabbitMQQueue{
+					Exchange:     queue.Exchange,
+					ExchangeType: queue.ExchangeType,
+					Name:         queue.Name,
+					AccessKey:    queue.AccessKey,
+				},
+			},
+			Acknowledger: delivery.Acknowledger,
 		}
 
-		if delivery.Id != strconv.Itoa(i+1) {
-			t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", i+1, delivery.Id)
-		}
-
-		if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
-			t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
+		if reflect.DeepEqual(expectedDelivery, delivery) == false {
+			t.Fatalf("error at delivery.\nexpected: %v\ngot:      %v", expectedDelivery, delivery)
 		}
 
 		err = consumer.Acknowledge(
@@ -812,29 +724,17 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 	consumer.BreakConsume(ctx)
 	consumer.CloseConnection(ctx)
 
-	log.Printf("finishing testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
+	t.Logf("finishing testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
 }
 
 func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
-	log.Printf("testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
+	t.Logf("testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
 	ctx := context.Background()
 
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
-
-	var messages []string = []string{"test001", "test002"}
+	var messages []string = []string{
+		"test001",
+		"test002",
+	}
 	var expectedHeader map[string]any = map[string]any{
 		"wololo": "walala",
 		"type":   "test",
@@ -865,10 +765,11 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	}
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		ctx,
 		env,
 		"deadletter",
 		deadletter,
-		logger,
+		nil,
 	)
 	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
 		ctx,
@@ -876,9 +777,9 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		"test",
 		publisher,
 		queue,
-		0,
-		0,
-		logger,
+		10,
+		10,
+		nil,
 	)
 
 	publisher.ShareChannel(consumer)
@@ -887,6 +788,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	deliveryChannel := consumer.Deliveries()
 
 	go consumer.ConsumeForever(ctx)
+
 	time.Sleep(600 * time.Millisecond)
 
 	for _, expectedMessage := range messages {
@@ -911,21 +813,30 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		}
 	}
 
-	// IN CASE OF FAILURE, THE TEST WOULD BLOCK
-
 	// testing success
+	if len(deliveryChannel) != 1 {
+		t.Fatalf("expected to have 1 message at delivery channel, but have %d", len(deliveryChannel))
+	}
+
 	delivery := <-deliveryChannel
 
-	if messages[0] != string(delivery.Body) {
-		t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", messages[0], string(delivery.Body))
+	var expectedDelivery dto_broker.BrokerDelivery = dto_broker.BrokerDelivery{
+		Id:     "1",
+		Header: expectedHeader,
+		Body:   []byte(messages[0]),
+		ConsumerDetail: map[string]any{
+			"rabbitmq_queue": dto_rabbitmq.RabbitMQQueue{
+				Exchange:     queue.Exchange,
+				ExchangeType: queue.ExchangeType,
+				Name:         queue.Name,
+				AccessKey:    queue.AccessKey,
+			},
+		},
+		Acknowledger: delivery.Acknowledger,
 	}
 
-	if delivery.Id != "1" {
-		t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", 1, delivery.Id)
-	}
-
-	if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
-		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
+	if reflect.DeepEqual(expectedDelivery, delivery) == false {
+		t.Fatalf("error at delivery.\nexpected: %v\ngot:      %v", expectedDelivery, delivery)
 	}
 
 	delivery.Acknowledger <- dto_broker.BrokerAcknowledge{
@@ -935,18 +846,30 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	// testing success
 
 	// testing requeue
+	time.Sleep(600 * time.Millisecond)
+	if len(deliveryChannel) != 1 {
+		t.Fatalf("expected to have 1 message at delivery channel, but have %d", len(deliveryChannel))
+	}
+
 	delivery = <-deliveryChannel
 
-	if messages[1] != string(delivery.Body) {
-		t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", messages[1], string(delivery.Body))
+	expectedDelivery = dto_broker.BrokerDelivery{
+		Id:     "2",
+		Header: expectedHeader,
+		Body:   []byte(messages[1]),
+		ConsumerDetail: map[string]any{
+			"rabbitmq_queue": dto_rabbitmq.RabbitMQQueue{
+				Exchange:     queue.Exchange,
+				ExchangeType: queue.ExchangeType,
+				Name:         queue.Name,
+				AccessKey:    queue.AccessKey,
+			},
+		},
+		Acknowledger: delivery.Acknowledger,
 	}
 
-	if delivery.Id != "2" {
-		t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", 2, delivery.Id)
-	}
-
-	if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
-		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
+	if reflect.DeepEqual(expectedDelivery, delivery) == false {
+		t.Fatalf("error at delivery.\nexpected: %v\ngot:      %v", expectedDelivery, delivery)
 	}
 
 	delivery.Acknowledger <- dto_broker.BrokerAcknowledge{
@@ -956,18 +879,30 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	// testing requeue
 
 	// testing deadletter
+	time.Sleep(600 * time.Millisecond)
+	if len(deliveryChannel) != 1 {
+		t.Fatalf("expected to have 1 message at delivery channel, but have %d", len(deliveryChannel))
+	}
+
 	delivery = <-deliveryChannel
 
-	if messages[1] != string(delivery.Body) {
-		t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", messages[1], string(delivery.Body))
+	expectedDelivery = dto_broker.BrokerDelivery{
+		Id:     "3",
+		Header: expectedHeader,
+		Body:   []byte(messages[1]),
+		ConsumerDetail: map[string]any{
+			"rabbitmq_queue": dto_rabbitmq.RabbitMQQueue{
+				Exchange:     queue.Exchange,
+				ExchangeType: queue.ExchangeType,
+				Name:         queue.Name,
+				AccessKey:    queue.AccessKey,
+			},
+		},
+		Acknowledger: delivery.Acknowledger,
 	}
 
-	if delivery.Id != "3" {
-		t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", 3, delivery.Id)
-	}
-
-	if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
-		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
+	if reflect.DeepEqual(expectedDelivery, delivery) == false {
+		t.Fatalf("error at delivery.\nexpected: %v\ngot:      %v", expectedDelivery, delivery)
 	}
 
 	delivery.Acknowledger <- dto_broker.BrokerAcknowledge{
@@ -1007,7 +942,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 
 	amqpQueue, err := consumer.Channel().Channel.QueueDeclarePassive(queue.Name, true, false, false, false, nil)
 	if err != nil {
-		t.Fatalf("%s", err)
+		t.Fatalf("failed to get queue: %s", err)
 	}
 
 	if amqpQueue.Messages != 0 {
@@ -1026,27 +961,12 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	consumer.BreakConsume(ctx)
 	consumer.CloseConnection(ctx)
 
-	log.Printf("finishing testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
+	t.Logf("finishing testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
 }
 
 func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
-	log.Printf("testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
+	t.Logf("testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var message string = "test001"
 	var expectedHeader map[string]any = map[string]any{
@@ -1077,14 +997,17 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 		"test",
 		nil,
 		queue,
-		0,
-		0,
-		logger,
+		10,
+		10,
+		nil,
 	)
 
 	consumer.Connect(ctx)
 
-	consumer.PrepareQueue(ctx, true)
+	err := consumer.PrepareQueue(ctx, true)
+	if err != nil {
+		t.Fatalf("error preparing queue: %s", err)
+	}
 
 	deliveryChannel := consumer.Deliveries()
 
@@ -1111,28 +1034,46 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 		t.Fatalf("publishing confirmation failed on queue %s with delivery TAG %d", queue.Name, confirmation.DeliveryTag)
 	}
 
+	time.Sleep(600 * time.Millisecond)
+
+	if len(deliveryChannel) != 1 {
+		t.Fatalf("expected to have 1 message at delivery channel, but have %d", len(deliveryChannel))
+	}
+
 	delivery := <-deliveryChannel
 
-	if message != string(delivery.Body) {
-		t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", message, string(delivery.Body))
-	}
-
-	if delivery.Id != "1" {
-		t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", 1, delivery.Id)
-	}
-
-	if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
-		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
-	}
-
-	consumer.Acknowledge(dto_broker.BrokerAcknowledge{
-		MessageId: delivery.Id,
-		Action:    constant_broker.ACKNOWLEDGE_DEADLETTER,
-		Report: dto_broker.BrokerPublishing{
-			Header: delivery.Header,
-			Body:   delivery.Body,
+	var expectedDelivery dto_broker.BrokerDelivery = dto_broker.BrokerDelivery{
+		Id:     "1",
+		Header: expectedHeader,
+		Body:   []byte(message),
+		ConsumerDetail: map[string]any{
+			"rabbitmq_queue": dto_rabbitmq.RabbitMQQueue{
+				Exchange:     queue.Exchange,
+				ExchangeType: queue.ExchangeType,
+				Name:         queue.Name,
+				AccessKey:    queue.AccessKey,
+			},
 		},
-	})
+		Acknowledger: delivery.Acknowledger,
+	}
+
+	if reflect.DeepEqual(expectedDelivery, delivery) == false {
+		t.Fatalf("error at delivery.\nexpected: %v\ngot:      %v", expectedDelivery, delivery)
+	}
+
+	err = consumer.Acknowledge(
+		dto_broker.BrokerAcknowledge{
+			MessageId: delivery.Id,
+			Action:    constant_broker.ACKNOWLEDGE_DEADLETTER,
+			Report: dto_broker.BrokerPublishing{
+				Header: delivery.Header,
+				Body:   delivery.Body,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("error acknowledging: %s", err)
+	}
 
 	err = deleteQueueAndExchange(consumer.Channel().Channel, queue.Name, queue.Exchange, "doit")
 	if err != nil {
@@ -1142,5 +1083,5 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 	consumer.BreakConsume(ctx)
 	consumer.CloseConnection(ctx)
 
-	log.Printf("finishing testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
+	t.Logf("finishing testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
 }
