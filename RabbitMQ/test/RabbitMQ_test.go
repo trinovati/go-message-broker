@@ -633,8 +633,8 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 		"test",
 		nil,
 		queue,
-		0,
-		0,
+		10,
+		10,
 		nil,
 	)
 
@@ -666,18 +666,31 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 			t.Fatalf("publishing confirmation failed on queue %s with delivery TAG %d", queue.Name, confirmation.DeliveryTag)
 		}
 
+		time.Sleep(600 * time.Millisecond)
+
+		if len(deliveryChannel) != 1 {
+			t.Fatalf("expected to have 1 message at delivery channel, but have %d", len(deliveryChannel))
+		}
+
 		delivery := <-deliveryChannel
 
-		if expectedMessage != string(delivery.Body) {
-			t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", expectedMessage, string(delivery.Body))
+		var expectedDelivery dto_broker.BrokerDelivery = dto_broker.BrokerDelivery{
+			Id:     strconv.Itoa(i + 1),
+			Header: expectedHeader,
+			Body:   []byte(expectedMessage),
+			ConsumerDetail: map[string]any{
+				"rabbitmq_queue": dto_rabbitmq.RabbitMQQueue{
+					Exchange:     queue.Exchange,
+					ExchangeType: queue.ExchangeType,
+					Name:         queue.Name,
+					AccessKey:    queue.AccessKey,
+				},
+			},
+			Acknowledger: delivery.Acknowledger,
 		}
 
-		if delivery.Id != strconv.Itoa(i+1) {
-			t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", i+1, delivery.Id)
-		}
-
-		if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
-			t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
+		if reflect.DeepEqual(expectedDelivery, delivery) == false {
+			t.Fatalf("error at delivery.\nexpected: %v\ngot:      %v", expectedDelivery, delivery)
 		}
 
 		err = consumer.Acknowledge(
@@ -715,7 +728,10 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	t.Logf("testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
 	ctx := context.Background()
 
-	var messages []string = []string{"test001", "test002"}
+	var messages []string = []string{
+		"test001",
+		"test002",
+	}
 	var expectedHeader map[string]any = map[string]any{
 		"wololo": "walala",
 		"type":   "test",
@@ -758,8 +774,8 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		"test",
 		publisher,
 		queue,
-		0,
-		0,
+		10,
+		10,
 		nil,
 	)
 
@@ -769,6 +785,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	deliveryChannel := consumer.Deliveries()
 
 	go consumer.ConsumeForever(ctx)
+
 	time.Sleep(600 * time.Millisecond)
 
 	for _, expectedMessage := range messages {
@@ -793,21 +810,30 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		}
 	}
 
-	// IN CASE OF FAILURE, THE TEST WOULD BLOCK
-
 	// testing success
+	if len(deliveryChannel) != 1 {
+		t.Fatalf("expected to have 1 message at delivery channel, but have %d", len(deliveryChannel))
+	}
+
 	delivery := <-deliveryChannel
 
-	if messages[0] != string(delivery.Body) {
-		t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", messages[0], string(delivery.Body))
+	var expectedDelivery dto_broker.BrokerDelivery = dto_broker.BrokerDelivery{
+		Id:     "1",
+		Header: expectedHeader,
+		Body:   []byte(messages[0]),
+		ConsumerDetail: map[string]any{
+			"rabbitmq_queue": dto_rabbitmq.RabbitMQQueue{
+				Exchange:     queue.Exchange,
+				ExchangeType: queue.ExchangeType,
+				Name:         queue.Name,
+				AccessKey:    queue.AccessKey,
+			},
+		},
+		Acknowledger: delivery.Acknowledger,
 	}
 
-	if delivery.Id != "1" {
-		t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", 1, delivery.Id)
-	}
-
-	if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
-		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
+	if reflect.DeepEqual(expectedDelivery, delivery) == false {
+		t.Fatalf("error at delivery.\nexpected: %v\ngot:      %v", expectedDelivery, delivery)
 	}
 
 	delivery.Acknowledger <- dto_broker.BrokerAcknowledge{
@@ -817,18 +843,30 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	// testing success
 
 	// testing requeue
+	time.Sleep(600 * time.Millisecond)
+	if len(deliveryChannel) != 1 {
+		t.Fatalf("expected to have 1 message at delivery channel, but have %d", len(deliveryChannel))
+	}
+
 	delivery = <-deliveryChannel
 
-	if messages[1] != string(delivery.Body) {
-		t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", messages[1], string(delivery.Body))
+	expectedDelivery = dto_broker.BrokerDelivery{
+		Id:     "2",
+		Header: expectedHeader,
+		Body:   []byte(messages[1]),
+		ConsumerDetail: map[string]any{
+			"rabbitmq_queue": dto_rabbitmq.RabbitMQQueue{
+				Exchange:     queue.Exchange,
+				ExchangeType: queue.ExchangeType,
+				Name:         queue.Name,
+				AccessKey:    queue.AccessKey,
+			},
+		},
+		Acknowledger: delivery.Acknowledger,
 	}
 
-	if delivery.Id != "2" {
-		t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", 2, delivery.Id)
-	}
-
-	if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
-		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
+	if reflect.DeepEqual(expectedDelivery, delivery) == false {
+		t.Fatalf("error at delivery.\nexpected: %v\ngot:      %v", expectedDelivery, delivery)
 	}
 
 	delivery.Acknowledger <- dto_broker.BrokerAcknowledge{
@@ -838,18 +876,30 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	// testing requeue
 
 	// testing deadletter
+	time.Sleep(600 * time.Millisecond)
+	if len(deliveryChannel) != 1 {
+		t.Fatalf("expected to have 1 message at delivery channel, but have %d", len(deliveryChannel))
+	}
+
 	delivery = <-deliveryChannel
 
-	if messages[1] != string(delivery.Body) {
-		t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", messages[1], string(delivery.Body))
+	expectedDelivery = dto_broker.BrokerDelivery{
+		Id:     "3",
+		Header: expectedHeader,
+		Body:   []byte(messages[1]),
+		ConsumerDetail: map[string]any{
+			"rabbitmq_queue": dto_rabbitmq.RabbitMQQueue{
+				Exchange:     queue.Exchange,
+				ExchangeType: queue.ExchangeType,
+				Name:         queue.Name,
+				AccessKey:    queue.AccessKey,
+			},
+		},
+		Acknowledger: delivery.Acknowledger,
 	}
 
-	if delivery.Id != "3" {
-		t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", 3, delivery.Id)
-	}
-
-	if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
-		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
+	if reflect.DeepEqual(expectedDelivery, delivery) == false {
+		t.Fatalf("error at delivery.\nexpected: %v\ngot:      %v", expectedDelivery, delivery)
 	}
 
 	delivery.Acknowledger <- dto_broker.BrokerAcknowledge{
@@ -889,7 +939,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 
 	amqpQueue, err := consumer.Channel().Channel.QueueDeclarePassive(queue.Name, true, false, false, false, nil)
 	if err != nil {
-		t.Fatalf("%s", err)
+		t.Fatalf("failed to get queue: %s", err)
 	}
 
 	if amqpQueue.Messages != 0 {
@@ -944,8 +994,8 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 		"test",
 		nil,
 		queue,
-		0,
-		0,
+		10,
+		10,
 		nil,
 	)
 
@@ -978,18 +1028,31 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 		t.Fatalf("publishing confirmation failed on queue %s with delivery TAG %d", queue.Name, confirmation.DeliveryTag)
 	}
 
+	time.Sleep(600 * time.Millisecond)
+
+	if len(deliveryChannel) != 1 {
+		t.Fatalf("expected to have 1 message at delivery channel, but have %d", len(deliveryChannel))
+	}
+
 	delivery := <-deliveryChannel
 
-	if message != string(delivery.Body) {
-		t.Fatalf("error at delivery.\nexpected: %s\ngot:      %s", message, string(delivery.Body))
+	var expectedDelivery dto_broker.BrokerDelivery = dto_broker.BrokerDelivery{
+		Id:     "1",
+		Header: expectedHeader,
+		Body:   []byte(message),
+		ConsumerDetail: map[string]any{
+			"rabbitmq_queue": dto_rabbitmq.RabbitMQQueue{
+				Exchange:     queue.Exchange,
+				ExchangeType: queue.ExchangeType,
+				Name:         queue.Name,
+				AccessKey:    queue.AccessKey,
+			},
+		},
+		Acknowledger: delivery.Acknowledger,
 	}
 
-	if delivery.Id != "1" {
-		t.Fatalf("error at delivery id.\nexpected: %d\ngot:      %s", 1, delivery.Id)
-	}
-
-	if reflect.DeepEqual(expectedHeader, delivery.Header) == false {
-		t.Fatalf("error at header.\nexpected: %v\ngot:      %v", expectedHeader, delivery.Header)
+	if reflect.DeepEqual(expectedDelivery, delivery) == false {
+		t.Fatalf("error at delivery.\nexpected: %v\ngot:      %v", expectedDelivery, delivery)
 	}
 
 	consumer.Acknowledge(dto_broker.BrokerAcknowledge{
