@@ -2,6 +2,8 @@
 package rabbitmq
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 
 	constant_broker "github.com/trinovati/go-message-broker/v3/pkg/constant"
@@ -55,6 +57,11 @@ func (consumer *RabbitMQConsumer) Acknowledge(acknowledge dto_broker.BrokerAckno
 			}
 
 			if consumer.deadletter != nil {
+				// adicionar function aqui para normalizar o report que é publicado
+				acknowledge.Report.Body, err = normalizeMessage(acknowledge.Report.Body)
+				if err != nil {
+					return fmt.Errorf("DEADLETTER IGNORED ERROR IN NORMALIZE MESSAGE: %s", err)
+				}
 				err = consumer.deadletter.Publish(acknowledge.LoggingCtx, acknowledge.Report)
 				if err != nil {
 					return fmt.Errorf("error publishing to deadletter queue of consumer %s of queue %s: %w", consumer.Name, consumer.Queue.Name, err)
@@ -73,4 +80,69 @@ func (consumer *RabbitMQConsumer) Acknowledge(acknowledge dto_broker.BrokerAckno
 	}
 
 	return nil
+}
+func normalizeMessage(input []byte) ([]byte, error) {
+	var raw map[string]interface{}
+
+	
+	if err := json.Unmarshal(input, &raw); err != nil {
+		return input, nil 
+	}
+
+	
+	standardFields := map[string]any{}
+
+	dataFields := map[string]any{}
+	standardKeys := map[string]bool{
+		"timestamp": true,
+		"service":   true,
+		"error":     true,
+		"message":   true, 
+	}
+
+	var inputMessageBase64 string
+
+	for k, v := range raw {
+		switch {
+		case k == "message":
+			
+			msgBytes, err := json.Marshal(v)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal message field: %w", err)
+			}
+			inputMessageBase64 = base64.StdEncoding.EncodeToString(msgBytes)
+
+		case standardKeys[k]:
+			standardFields[k] = v
+
+		default:
+			dataFields[k] = v
+		}
+	}
+
+	
+	dataBytes, err := json.Marshal(dataFields)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal data fields: %w", err)
+	}
+	dataBase64 := base64.StdEncoding.EncodeToString(dataBytes)
+
+
+	result := map[string]interface{}{
+		"timestamp":     standardFields["timestamp"],
+		"service":       standardFields["service"],
+		"error":         standardFields["error"],
+		"input_message": inputMessageBase64,
+		"data":          dataBase64,
+	}
+
+
+	output, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal final result: %w", err)
+	}
+
+
+
+	return output, nil
 }
