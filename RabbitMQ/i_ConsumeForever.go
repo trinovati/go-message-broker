@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	dto_rabbitmq "github.com/trinovati/go-message-broker/v3/RabbitMQ/dto"
 	dto_broker "github.com/trinovati/go-message-broker/v3/pkg/dto"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -89,9 +90,17 @@ func (consumer *RabbitMQConsumer) ConsumeForever(ctx context.Context) {
 
 			consumer.DeliveryMap.Store(messageId, delivery)
 			consumer.DeliveryChannel <- dto_broker.BrokerDelivery{
-				Id:           messageId,
-				Header:       delivery.Headers,
-				Body:         delivery.Body,
+				Id:     messageId,
+				Header: delivery.Headers,
+				Body:   delivery.Body,
+				ConsumerDetail: map[string]any{
+					"rabbitmq_queue": dto_rabbitmq.RabbitMQQueue{
+						Exchange:     consumer.Queue.Exchange,
+						ExchangeType: consumer.Queue.ExchangeType,
+						Name:         consumer.Queue.Name,
+						AccessKey:    consumer.Queue.AccessKey,
+					},
+				},
 				Acknowledger: consumer.AcknowledgeChannel,
 			}
 			continue
