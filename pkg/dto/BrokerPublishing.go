@@ -1,5 +1,3 @@
-// Package contains data transfer objects (DTOs) used for processing and handling broker deliveries and publishing.
-// It includes structures for create publishing, receiving deliveries and acknowledging deliveries.
 package dto_broker
 
 /*
