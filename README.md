@@ -16,11 +16,11 @@ This project is released under the MIT license (see LICENSE file).
 go get github.com/trinovati/go-message-broker/v3
 
 ## Contact
-Roni:       roni.gasparetto@trinovati.com.br    Co-owner and CTO at Trinovati
-Fabio Boni: fabioboni96@hotmail.com             Maintainer and developer
+* Roni:       roni.gasparetto@trinovati.com.br    Co-owner and CTO at Trinovati
+* Fabio Boni: fabioboni96@hotmail.com             Maintainer and developer
 
 ## Authors and acknowledgment
-Fabio Boni
+* Fabio Boni
 
 ## **TODO**
 * RabbitMQ module:
