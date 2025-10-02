@@ -1,8 +1,0 @@
-##################################################################
-Uma Connection pode vazar na memória tendo uma goroutine para sempre mantendo-a viva e sendo impossível fechá-la
-    caso todos seus canais filhos sejam fechados sem antes ser chamado o CloseConnection().
-
-A conexão deve ser independente dos canais, não sendo fechada ao ser fechado um canal, porém, se todos os canais
-    forem fechados não haverá referencias para a conexão ser fechada. Arrumar uma solução para isso, talvés
-    adicionar a conexão nos objetos publisher e consumer, porém deve ser analisado a complexidade que isso pode gerar.
-##################################################################
