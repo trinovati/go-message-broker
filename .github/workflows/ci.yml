@@ -3,8 +3,17 @@ name: Test and Release
 on:
   push:
     branches:
+      - main
+      - dev
+      - staging
       - 'release/v*'
-
+  pull_request:
+    branches:
+      - main
+      - dev
+      - staging
+      - 'release/**'
+      
 jobs:
   test:
     name: Run Tests
