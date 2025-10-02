@@ -1,10 +1,8 @@
-// this rabbitmq package is adapting the amqp091-go lib.
 package rabbitmq
 
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"time"
 
@@ -43,13 +41,15 @@ name is a internal name for logging purposes.
 queue is a RabbitMQQueue dto that hold the information of the queue this object will publish to.
 */
 func NewRabbitMQPublisher(
+	ctx context.Context,
 	env config.RABBITMQ_CONFIG,
 	name string,
 	queue dto_rabbitmq.RabbitMQQueue,
 	logger *slog.Logger,
 ) *RabbitMQPublisher {
 	if logger == nil {
-		log.Panicf("RabbitMQPublisher object have received a null logger dependency")
+		logger = slog.Default()
+		logger.WarnContext(ctx, "no logger have been passed to rabbitmq publisher adapter constructor, using slog.Default")
 	}
 
 	var channel *channel.RabbitMQChannel = channel.NewRabbitMQChannel(env, logger)
@@ -83,12 +83,12 @@ func (publisher *RabbitMQPublisher) producePublisherLogGroup() {
 				Value: slog.StringValue(publisher.Name),
 			},
 			{
-				Key:   "publisher_id",
-				Value: slog.StringValue(publisher.Id.String()),
-			},
-			{
 				Key:   "queue",
 				Value: slog.StringValue(publisher.Queue.Name),
+			},
+			{
+				Key:   "publisher_id",
+				Value: slog.StringValue(publisher.Id.String()),
 			},
 			{
 				Key:   "channel_id",
@@ -185,7 +185,7 @@ func (publisher *RabbitMQPublisher) PrepareQueue(ctx context.Context, lock bool)
 	for tolerance = 0; tolerance <= PUBLISH_PREPRARE_QUEUE_MAX_RETRY; tolerance++ {
 		err = publisher.channel.WaitForChannel(ctx, lock)
 		if err != nil {
-			return fmt.Errorf("error preparing queue %s from publisher %s at channel id %s and connection id %s: %w", publisher.Queue.Name, publisher.Name, publisher.channel.Id, publisher.channel.Connection().Id, err)
+			return fmt.Errorf("error preparing queue %s from publisher %s: %w", publisher.Queue.Name, publisher.Name, err)
 		}
 
 		err = publisher.channel.Channel.ExchangeDeclare(publisher.Queue.Exchange, publisher.Queue.ExchangeType, true, false, false, false, nil)
@@ -213,7 +213,7 @@ func (publisher *RabbitMQPublisher) PrepareQueue(ctx context.Context, lock bool)
 	}
 
 	if err == nil {
-		err = fmt.Errorf("could not prepare publish queue %s for unknown reason from publisher %s at channel id %s and connection id %s", publisher.Queue.Name, publisher.Name, publisher.channel.Id, publisher.channel.Connection().Id)
+		err = fmt.Errorf("could not prepare publish queue %s for unknown reason from publisher %s", publisher.Queue.Name, publisher.Name)
 	}
 
 	return err

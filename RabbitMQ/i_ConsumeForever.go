@@ -1,4 +1,3 @@
-// this rabbitmq package is adapting the amqp091-go lib.
 package rabbitmq
 
 import (
@@ -243,12 +242,12 @@ func (consumer *RabbitMQConsumer) prepareLoopingConsumer(ctx context.Context) (i
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("stop preparing consumer due to context closure")
+			return nil, fmt.Errorf("stop preparing consumer %s of queue %s due to context closure", consumer.Name, consumer.Queue.Name)
 
 		default:
 			err = consumer.channel.WaitForChannel(ctx, true)
 			if err != nil {
-				return nil, fmt.Errorf("error waiting for channel: %w", err)
+				return nil, fmt.Errorf("error waiting for channel of consumer %s of queue %s: %w", consumer.Name, consumer.Queue.Name, err)
 			}
 
 			err = consumer.PrepareQueue(ctx, false)

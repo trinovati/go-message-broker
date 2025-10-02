@@ -1,11 +1,9 @@
-// this rabbitmq package is adapting the amqp091-go lib.
 package channel
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"slices"
 	"sync"
@@ -65,7 +63,8 @@ func NewRabbitMQChannel(
 	logger *slog.Logger,
 ) *RabbitMQChannel {
 	if logger == nil {
-		log.Panicf("RabbitMQChannel object have received a null logger dependency")
+		logger = slog.Default()
+		logger.Warn("no logger have been passed to rabbitmq channel adapter constructor, using slog.Default")
 	}
 
 	var connection *connection.RabbitMQConnection = connection.NewRabbitMQConnection(env, logger)

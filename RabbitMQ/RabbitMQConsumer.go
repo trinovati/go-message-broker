@@ -1,10 +1,8 @@
-// this rabbitmq package is adapting the amqp091-go lib.
 package rabbitmq
 
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"sync"
 
@@ -75,7 +73,8 @@ func NewRabbitMQConsumer(
 	logger *slog.Logger,
 ) *RabbitMQConsumer {
 	if logger == nil {
-		log.Panicf("RabbitMQConsumer object have received a null logger dependency")
+		logger = slog.Default()
+		logger.Warn("no logger have been passed to rabbitmq consumer adapter constructor, using slog.Default")
 	}
 
 	var channel *channel.RabbitMQChannel = channel.NewRabbitMQChannel(env, logger)
@@ -104,7 +103,7 @@ func NewRabbitMQConsumer(
 	if deadletter != nil {
 		consumer.ShareConnection(deadletter)
 	} else {
-		consumer.logger.WarnContext(ctx, "NO DEADLETTER QUEUE CONFIGURED    DEADLETTER COMMANDS WILL BE IGNORED IN THIS CONSUMER", consumer.logGroup)
+		consumer.logger.WarnContext(ctx, "NO DEADLETTER QUEUE CONFIGURED, DEADLETTER COMMANDS WILL BE IGNORED BY THIS CONSUMER", consumer.logGroup)
 	}
 
 	return consumer
@@ -123,12 +122,12 @@ func (consumer *RabbitMQConsumer) produceConsumerLogGroup() {
 				Value: slog.StringValue(consumer.Name),
 			},
 			{
-				Key:   "consumer_id",
-				Value: slog.StringValue(consumer.Id.String()),
-			},
-			{
 				Key:   "queue",
 				Value: slog.StringValue(consumer.Queue.Name),
+			},
+			{
+				Key:   "consumer_id",
+				Value: slog.StringValue(consumer.Id.String()),
 			},
 			{
 				Key:   "channel_id",
@@ -255,43 +254,43 @@ It will purge the queue before consuming case ordered to.
 */
 func (consumer *RabbitMQConsumer) PrepareQueue(ctx context.Context, lock bool) (err error) {
 	if !consumer.channel.IsChannelUp(lock) {
-		return fmt.Errorf("channel dropped before declaring exchange %s from consumer %s at channel id %s and connection id %s", consumer.Queue.Exchange, consumer.Name, consumer.channel.Id, consumer.channel.Connection().Id)
+		return fmt.Errorf("channel dropped before declaring exchange %s from consumer %s", consumer.Queue.Exchange, consumer.Name)
 	}
 
 	err = consumer.channel.Channel.ExchangeDeclare(consumer.Queue.Exchange, consumer.Queue.ExchangeType, true, false, false, false, nil)
 	if err != nil {
-		return fmt.Errorf("error declaring RabbitMQ exchange %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Exchange, consumer.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
+		return fmt.Errorf("error declaring RabbitMQ exchange %s from consumer %s: %w", consumer.Queue.Exchange, consumer.Name, err)
 	}
 
 	_, err = consumer.channel.Channel.QueueDeclare(consumer.Queue.Name, true, false, false, false, nil)
 	if err != nil {
-		return fmt.Errorf("error declaring queue %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Name, consumer.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
+		return fmt.Errorf("error declaring queue %s from consumer %s: %w", consumer.Queue.Name, consumer.Name, err)
 	}
 
 	err = consumer.channel.Channel.QueueBind(consumer.Queue.Name, consumer.Queue.AccessKey, consumer.Queue.Exchange, false, nil)
 	if err != nil {
-		return fmt.Errorf("error binding queue %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Name, consumer.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
+		return fmt.Errorf("error binding queue %s from consumer %s: %w", consumer.Queue.Name, consumer.Name, err)
 	}
 
 	err = consumer.channel.Channel.Qos(consumer.Queue.Qos, 0, false)
 	if err != nil {
-		return fmt.Errorf("error setting qos of %d for queue %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Qos, consumer.Queue.Name, consumer.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
+		return fmt.Errorf("error setting qos of %d for queue %s from consumer %s: %w", consumer.Queue.Qos, consumer.Queue.Name, consumer.Name, err)
 	}
 
 	if consumer.Queue.Purge {
 		_, err = consumer.channel.Channel.QueuePurge(consumer.Queue.Name, true)
 		if err != nil {
-			return fmt.Errorf("error purging queue %s from consumer %s at channel id %s and connection id %s: %w", consumer.Queue.Name, consumer.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
+			return fmt.Errorf("error purging queue %s from consumer %s: %w", consumer.Queue.Name, consumer.Name, err)
 		}
 	}
 
 	if consumer.deadletter != nil {
 		err = consumer.deadletter.PrepareQueue(ctx, lock)
 		if err != nil {
-			return fmt.Errorf("error preparing deadletter queue %s from publisher %s at channel id %s and connection id %s: %w", consumer.Queue.Name, consumer.Name, consumer.channel.Id, consumer.channel.Connection().Id, err)
+			return fmt.Errorf("error preparing deadletter queue %s from publisher %s: %w", consumer.Queue.Name, consumer.Name, err)
 		}
 	} else {
-		consumer.logger.WarnContext(ctx, "NO DEADLETTER QUEUE PREPARED    DEADLETTER COMMANDS WILL BE IGNORED BY THIS CONSUMER", consumer.logGroup)
+		consumer.logger.WarnContext(ctx, "NO DEADLETTER QUEUE PREPARED, DEADLETTER COMMANDS WILL BE IGNORED BY THIS CONSUMER", consumer.logGroup)
 	}
 
 	return nil
