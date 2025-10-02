@@ -548,9 +548,12 @@ func TestPublishRabbitMQ(t *testing.T) {
 
 	publisher.Connect(ctx)
 
-	publisher.PrepareQueue(ctx, true)
+	err := publisher.PrepareQueue(ctx, true)
+	if err != nil {
+		t.Fatalf("error preparing queue: %s", err)
+	}
 
-	_, err := publisher.Channel().Channel.QueuePurge(queue.Name, true)
+	_, err = publisher.Channel().Channel.QueuePurge(queue.Name, true)
 	if err != nil {
 		t.Fatalf("error purging the queue: %s", err.Error())
 	}
@@ -1001,7 +1004,10 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 
 	consumer.Connect(ctx)
 
-	consumer.PrepareQueue(ctx, true)
+	err := consumer.PrepareQueue(ctx, true)
+	if err != nil {
+		t.Fatalf("error preparing queue: %s", err)
+	}
 
 	deliveryChannel := consumer.Deliveries()
 
@@ -1055,14 +1061,19 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 		t.Fatalf("error at delivery.\nexpected: %v\ngot:      %v", expectedDelivery, delivery)
 	}
 
-	consumer.Acknowledge(dto_broker.BrokerAcknowledge{
-		MessageId: delivery.Id,
-		Action:    constant_broker.ACKNOWLEDGE_DEADLETTER,
-		Report: dto_broker.BrokerPublishing{
-			Header: delivery.Header,
-			Body:   delivery.Body,
+	err = consumer.Acknowledge(
+		dto_broker.BrokerAcknowledge{
+			MessageId: delivery.Id,
+			Action:    constant_broker.ACKNOWLEDGE_DEADLETTER,
+			Report: dto_broker.BrokerPublishing{
+				Header: delivery.Header,
+				Body:   delivery.Body,
+			},
 		},
-	})
+	)
+	if err != nil {
+		t.Fatalf("error acknowledging: %s", err)
+	}
 
 	err = deleteQueueAndExchange(consumer.Channel().Channel, queue.Name, queue.Exchange, "doit")
 	if err != nil {

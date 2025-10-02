@@ -131,7 +131,10 @@ Open the amqp.Connection and amqp.Channel if not already open.
 */
 func (publisher *RabbitMQPublisher) Connect(ctx context.Context) interfaces.Behavior {
 	if !publisher.channel.IsActive(true) {
-		publisher.channel.Connect(ctx)
+		err := publisher.channel.Connect(ctx)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	return publisher

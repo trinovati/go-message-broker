@@ -193,7 +193,10 @@ Open the amqp.Connection and amqp.Channel if not already open.
 */
 func (consumer *RabbitMQConsumer) Connect(ctx context.Context) interfaces.Behavior {
 	if !consumer.channel.IsActive(true) {
-		consumer.channel.Connect(ctx)
+		err := consumer.channel.Connect(ctx)
+		if err != nil {
+			panic(err)
+		}
 	}
 	consumer.channelTimesCreated = consumer.channel.TimesCreated
 
