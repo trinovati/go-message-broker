@@ -3,10 +3,7 @@ package testing
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"log"
-	"log/slog"
-	"os"
+	"fmt"
 	"reflect"
 	"strconv"
 	"testing"
@@ -19,7 +16,6 @@ import (
 	dto_broker "github.com/trinovati/go-message-broker/v3/pkg/dto"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	slogctx "github.com/veqryn/slog-context"
 )
 
 /*
@@ -29,45 +25,29 @@ FOR TEST PURPOSES ONLY!!!
 Delete a queue and a exchange.
 safePassword asserts that you're sure of it.
 */
-
 func deleteQueueAndExchange(channel *amqp.Channel, queueName string, exchangeName string, safePassword string) (err error) {
 
 	if safePassword == "doit" {
 		_, err = channel.QueueDelete(queueName, false, false, false)
 		if err != nil {
-			return errors.New("can't delete queue: " + err.Error())
+			return fmt.Errorf("can't delete queue %s: %w", queueName, err)
 		}
 
 		err = channel.ExchangeDelete(exchangeName, false, false)
 		if err != nil {
-			return errors.New("can't delete exchange: " + err.Error())
+			return fmt.Errorf("can't delete exchange %s: %w", exchangeName, err)
 		}
 
 	} else {
-		return errors.New("can't delete: you seem not sure of it")
+		return fmt.Errorf("can't delete: you seem not sure of it")
 	}
 
 	return nil
 }
 
 func TestConnectionRabbitMQ(t *testing.T) {
-	log.Printf("testing Connection for RabbitMQ\n\n")
+	t.Logf("testing Connection for RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
@@ -94,14 +74,15 @@ func TestConnectionRabbitMQ(t *testing.T) {
 		queue,
 		0,
 		0,
-		logger,
+		nil,
 	)
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		ctx,
 		env,
 		"test",
 		queue,
-		logger,
+		nil,
 	)
 
 	consumer.Connect(ctx)
@@ -169,27 +150,12 @@ func TestConnectionRabbitMQ(t *testing.T) {
 		t.Fatalf("publisher channel should be down")
 	}
 
-	log.Printf("finishing testing Connection for RabbitMQ\n\n")
+	t.Logf("finishing testing Connection for RabbitMQ\n\n")
 }
 
 func TestChannelRabbitMQ(t *testing.T) {
-	log.Printf("testing Channel for RabbitMQ\n\n")
+	t.Logf("testing Channel for RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
@@ -216,14 +182,15 @@ func TestChannelRabbitMQ(t *testing.T) {
 		queue,
 		0,
 		0,
-		logger,
+		nil,
 	)
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		ctx,
 		env,
 		"test",
 		queue,
-		logger,
+		nil,
 	)
 
 	consumer.Connect(ctx)
@@ -289,27 +256,12 @@ func TestChannelRabbitMQ(t *testing.T) {
 	publisher.CloseConnection(ctx)
 	time.Sleep(time.Second)
 
-	log.Printf("finishing testing Channel for RabbitMQ\n\n")
+	t.Logf("finishing testing Channel for RabbitMQ\n\n")
 }
 
 func TestShareConnectionRabbitMQ(t *testing.T) {
-	log.Printf("testing ShareConnection for RabbitMQ\n\n")
+	t.Logf("testing ShareConnection for RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
@@ -336,14 +288,15 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 		queue,
 		0,
 		0,
-		logger,
+		nil,
 	)
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		ctx,
 		env,
 		"test",
 		queue,
-		logger,
+		nil,
 	)
 
 	publisher.ShareConnection(consumer)
@@ -384,27 +337,12 @@ func TestShareConnectionRabbitMQ(t *testing.T) {
 		t.Fatalf("publisher channel should be down")
 	}
 
-	log.Printf("finishing testing ShareConnection for RabbitMQ\n\n")
+	t.Logf("finishing testing ShareConnection for RabbitMQ\n\n")
 }
 
 func TestShareChannelRabbitMQ(t *testing.T) {
-	log.Printf("testing ShareChannel for RabbitMQ\n\n")
+	t.Logf("testing ShareChannel for RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
@@ -431,14 +369,15 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 		queue,
 		0,
 		0,
-		logger,
+		nil,
 	)
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		ctx,
 		env,
 		"test",
 		queue,
-		logger,
+		nil,
 	)
 
 	publisher.ShareChannel(consumer)
@@ -484,27 +423,12 @@ func TestShareChannelRabbitMQ(t *testing.T) {
 		t.Fatalf("channel should be down")
 	}
 
-	log.Printf("finishing testing ShareChannel for RabbitMQ\n\n")
+	t.Logf("finishing testing ShareChannel for RabbitMQ\n\n")
 }
 
 func TestChannelAndConnectionContextCancellationRabbitMQ(t *testing.T) {
-	log.Printf("testing Channel And Connection Context Cancellation for RabbitMQ\n\n")
+	t.Logf("testing Channel And Connection Context Cancellation for RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
@@ -524,10 +448,11 @@ func TestChannelAndConnectionContextCancellationRabbitMQ(t *testing.T) {
 	}
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		ctx,
 		env,
 		"test",
 		queue,
-		logger,
+		nil,
 	)
 
 	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
@@ -538,7 +463,7 @@ func TestChannelAndConnectionContextCancellationRabbitMQ(t *testing.T) {
 		queue,
 		0,
 		0,
-		logger,
+		nil,
 	)
 
 	publisher.ShareConnection(consumer)
@@ -591,27 +516,12 @@ func TestChannelAndConnectionContextCancellationRabbitMQ(t *testing.T) {
 		t.Fatalf("connection should be down")
 	}
 
-	log.Printf("finishing testing Channel And Connection Context Cancellation for RabbitMQ\n\n")
+	t.Logf("finishing testing Channel And Connection Context Cancellation for RabbitMQ\n\n")
 }
 
 func TestPublishRabbitMQ(t *testing.T) {
-	log.Print("testing Publish for RabbitMQ\n\n")
+	t.Logf("testing Publish for RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var env config.RABBITMQ_CONFIG = config.RABBITMQ_CONFIG{
 		PROTOCOL: "amqp",
@@ -629,10 +539,11 @@ func TestPublishRabbitMQ(t *testing.T) {
 	}
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		ctx,
 		env,
 		"test",
 		queue,
-		logger,
+		nil,
 	)
 
 	publisher.Connect(ctx)
@@ -686,27 +597,12 @@ func TestPublishRabbitMQ(t *testing.T) {
 
 	publisher.CloseConnection(ctx)
 
-	log.Printf("finishing testing Publish for RabbitMQ\n\n")
+	t.Logf("finishing testing Publish for RabbitMQ\n\n")
 }
 
 func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
-	log.Printf("testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
+	t.Logf("testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var messages []string = []string{"test001", "test002", "test003"}
 	var expectedHeader map[string]any = map[string]any{
@@ -739,7 +635,7 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 		queue,
 		0,
 		0,
-		logger,
+		nil,
 	)
 
 	consumer.Connect(ctx)
@@ -812,27 +708,12 @@ func TestConsumeForeverAndAcknowledgeRabbitMQ(t *testing.T) {
 	consumer.BreakConsume(ctx)
 	consumer.CloseConnection(ctx)
 
-	log.Printf("finishing testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
+	t.Logf("finishing testing ConsumeForever and Acknowledge for RabbitMQ\n\n")
 }
 
 func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
-	log.Printf("testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
+	t.Logf("testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var messages []string = []string{"test001", "test002"}
 	var expectedHeader map[string]any = map[string]any{
@@ -865,10 +746,11 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	}
 
 	var publisher *rabbitmq.RabbitMQPublisher = rabbitmq.NewRabbitMQPublisher(
+		ctx,
 		env,
 		"deadletter",
 		deadletter,
-		logger,
+		nil,
 	)
 	var consumer *rabbitmq.RabbitMQConsumer = rabbitmq.NewRabbitMQConsumer(
 		ctx,
@@ -878,7 +760,7 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 		queue,
 		0,
 		0,
-		logger,
+		nil,
 	)
 
 	publisher.ShareChannel(consumer)
@@ -1026,27 +908,12 @@ func TestConsumeForeverAndAcknowledgeViaChannelRabbitMQ(t *testing.T) {
 	consumer.BreakConsume(ctx)
 	consumer.CloseConnection(ctx)
 
-	log.Printf("finishing testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
+	t.Logf("finishing testing ConsumeForever and Acknowledge via channel for RabbitMQ\n\n")
 }
 
 func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
-	log.Printf("testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
+	t.Logf("testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
 	ctx := context.Background()
-
-	logger := slog.New(
-		slogctx.NewHandler(
-			slog.NewJSONHandler(
-				os.Stdout,
-				&slog.HandlerOptions{
-					AddSource: true,
-					Level:     slog.LevelDebug,
-				},
-			).WithAttrs(
-				[]slog.Attr{},
-			),
-			nil,
-		),
-	)
 
 	var message string = "test001"
 	var expectedHeader map[string]any = map[string]any{
@@ -1079,7 +946,7 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 		queue,
 		0,
 		0,
-		logger,
+		nil,
 	)
 
 	consumer.Connect(ctx)
@@ -1142,5 +1009,5 @@ func TestAcknowledgeDeadletterMissingPublisherRabbitMQ(t *testing.T) {
 	consumer.BreakConsume(ctx)
 	consumer.CloseConnection(ctx)
 
-	log.Printf("finishing testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
+	t.Logf("finishing testing Acknowledge deadletter with missing publisher RabbitMQ\n\n")
 }
