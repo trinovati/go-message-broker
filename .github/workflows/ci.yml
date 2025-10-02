@@ -16,9 +16,14 @@ on:
       
 jobs:
   test:
-    name: Run Tests
+    name: Run Unit Tests
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/heads/release/v')
+    if: >-
+      github.event_name == 'pull_request' || 
+        (github.event_name == 'push' && 
+          !contains(github.event.head_commit.message, 'Merge pull request') &&
+          (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/staging' || startsWith(github.ref, 'refs/heads/release/v'))
+        )
     services:
       rabbitmq:
         image: rabbitmq:3-management
@@ -51,7 +56,12 @@ jobs:
         run: sh ./test.sh
 
   lint:
-    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && !contains(github.event.head_commit.message, 'Merge pull request')) }}
+    if: >-
+      github.event_name == 'pull_request' || 
+        (github.event_name == 'push' && 
+          !contains(github.event.head_commit.message, 'Merge pull request') &&
+          (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/staging' || startsWith(github.ref, 'refs/heads/release/v'))
+        )
     name: Run Linter
     runs-on: ubuntu-latest
     steps:
