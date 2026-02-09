@@ -1,4 +1,3 @@
-// this rabbitmq package is adapting the amqp091-go lib.
 package rabbitmq
 
 import (
@@ -8,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	dto_rabbitmq "github.com/trinovati/go-message-broker/v3/RabbitMQ/dto"
 	dto_broker "github.com/trinovati/go-message-broker/v3/pkg/dto"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -50,7 +50,6 @@ func (consumer *RabbitMQConsumer) ConsumeForever(ctx context.Context) {
 	consumer.mutex.Unlock()
 
 	go consumer.amqpChannelMonitor(consumer.consumerCtx, channelDropSignal, channelUpSignal)
-	go consumer.acknowledgeWorker(consumer.consumerCtx)
 
 	for {
 		select {
@@ -90,10 +89,17 @@ func (consumer *RabbitMQConsumer) ConsumeForever(ctx context.Context) {
 
 			consumer.DeliveryMap.Store(messageId, delivery)
 			consumer.DeliveryChannel <- dto_broker.BrokerDelivery{
-				Id:           messageId,
-				Header:       delivery.Headers,
-				Body:         delivery.Body,
-				Acknowledger: consumer.AcknowledgeChannel,
+				Id:     messageId,
+				Header: alignAmqpTableAsHeader(delivery.Headers),
+				Body:   delivery.Body,
+				ConsumerDetail: map[string]any{
+					"rabbitmq_queue": dto_rabbitmq.RabbitMQQueue{
+						Exchange:     consumer.Queue.Exchange,
+						ExchangeType: consumer.Queue.ExchangeType,
+						Name:         consumer.Queue.Name,
+						AccessKey:    consumer.Queue.AccessKey,
+					},
+				},
 			}
 			continue
 		}
@@ -155,22 +161,6 @@ func (consumer *RabbitMQConsumer) ConsumeForever(ctx context.Context) {
 
 		consumer.logger.DebugContext(consumer.consumerCtx, "consumer channel is healthy", consumer.logGroup)
 		continue
-	}
-}
-
-func (consumer *RabbitMQConsumer) acknowledgeWorker(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			consumer.logger.InfoContext(ctx, "gracefully closing acknowledge worker due to context closure", consumer.logGroup)
-			return
-
-		case acknowledge := <-consumer.AcknowledgeChannel:
-			err := consumer.Acknowledge(acknowledge)
-			if err != nil {
-				consumer.logger.ErrorContext(ctx, "error acknowledging message", slog.Any("error", err), consumer.logGroup)
-			}
-		}
 	}
 }
 
@@ -243,12 +233,12 @@ func (consumer *RabbitMQConsumer) prepareLoopingConsumer(ctx context.Context) (i
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("stop preparing consumer due to context closure")
+			return nil, fmt.Errorf("stop preparing consumer %s of queue %s due to context closure", consumer.Name, consumer.Queue.Name)
 
 		default:
 			err = consumer.channel.WaitForChannel(ctx, true)
 			if err != nil {
-				return nil, fmt.Errorf("error waiting for channel: %w", err)
+				return nil, fmt.Errorf("error waiting for channel of consumer %s of queue %s: %w", consumer.Name, consumer.Queue.Name, err)
 			}
 
 			err = consumer.PrepareQueue(ctx, false)
@@ -268,4 +258,22 @@ func (consumer *RabbitMQConsumer) prepareLoopingConsumer(ctx context.Context) (i
 			return incomingDeliveryChannel, nil
 		}
 	}
+}
+
+func alignAmqpTableAsHeader(table amqp.Table) map[string]any {
+	if len(table) == 0 {
+		return nil
+	}
+
+	header := make(map[string]any, len(table))
+	for key, value := range table {
+		switch field := value.(type) {
+		case amqp.Table:
+			header[key] = alignAmqpTableAsHeader(field)
+		default:
+			header[key] = field
+		}
+	}
+
+	return header
 }

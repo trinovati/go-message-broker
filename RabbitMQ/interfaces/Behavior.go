@@ -12,7 +12,7 @@ Basic behavior of object that interact with RabbitMQ.
 */
 type Behavior interface {
 	ShareChannel(Behavior Behavior) Behavior
-	ShareConnection(ctx context.Context, Behavior Behavior) Behavior
+	ShareConnection(Behavior Behavior) Behavior
 
 	Connect(ctx context.Context) Behavior
 

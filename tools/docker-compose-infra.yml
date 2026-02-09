@@ -1,0 +1,33 @@
+version: '3.9'
+services:
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: rabbitmq-dev
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: "guest"
+      RABBITMQ_DEFAULT_PASS: "guest"
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbitmq_queue_type classic"
+      RABBITMQ_PROMETHEUS_RETURNS: "true"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "15692:15692"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dev_network
+
+networks:
+  dev_network:
+    driver: bridge

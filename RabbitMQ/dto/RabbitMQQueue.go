@@ -5,6 +5,6 @@ type RabbitMQQueue struct {
 	ExchangeType string `json:"exchange_type"`
 	Name         string `json:"name"`
 	AccessKey    string `json:"access_key"`
-	Qos          int    `json:"qos"`
-	Purge        bool   `json:"purge"`
+	Qos          int    `json:"qos,omitempty"`
+	Purge        bool   `json:"purge,omitempty"`
 }
