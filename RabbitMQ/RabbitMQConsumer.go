@@ -27,9 +27,8 @@ type RabbitMQConsumer struct {
 	isRunning   bool
 	isConsuming bool
 
-	DeliveryChannel    chan dto_broker.BrokerDelivery
-	DeliveryMap        *sync.Map
-	AcknowledgeChannel chan dto_broker.BrokerAcknowledge
+	DeliveryChannel chan dto_broker.BrokerDelivery
+	DeliveryMap     *sync.Map
 
 	deadletter interfaces.Publisher
 
@@ -69,7 +68,6 @@ func NewRabbitMQConsumer(
 	deadletter interfaces.Publisher,
 	queue dto_rabbitmq.RabbitMQQueue,
 	deliveriesBufferSize int,
-	acknowledgerBufferSize int,
 	logger *slog.Logger,
 ) *RabbitMQConsumer {
 	if logger == nil {
@@ -84,9 +82,8 @@ func NewRabbitMQConsumer(
 		Id:    uuid.New(),
 		Queue: queue,
 
-		DeliveryChannel:    make(chan dto_broker.BrokerDelivery, deliveriesBufferSize),
-		DeliveryMap:        &sync.Map{},
-		AcknowledgeChannel: make(chan dto_broker.BrokerAcknowledge, acknowledgerBufferSize),
+		DeliveryChannel: make(chan dto_broker.BrokerDelivery, deliveriesBufferSize),
+		DeliveryMap:     &sync.Map{},
 
 		deadletter: deadletter,
 
