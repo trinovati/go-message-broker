@@ -16,7 +16,7 @@ func (consumer *RabbitMQConsumer) BreakConsume(ctx context.Context) {
 	consumer.isConsuming = false
 	consumer.isRunning = false
 
-	consumer.channel.UnregisterConsumer(ctx, consumer.Id)
+	consumer.channel.UnregisterConsumer(consumer.Id)
 
 	consumer.mutex.Unlock()
 }
