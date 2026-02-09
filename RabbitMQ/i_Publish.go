@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	dto_broker "github.com/trinovati/go-message-broker/v3/pkg/dto"
 	error_broker "github.com/trinovati/go-message-broker/v3/pkg/error"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -14,7 +13,7 @@ import (
 /*
 Publish into RabbitMQ queue configured at RabbitMQPublisher object.
 */
-func (publisher *RabbitMQPublisher) Publish(ctx context.Context, publishing dto_broker.BrokerPublishing) (err error) {
+func (publisher *RabbitMQPublisher) Publish(ctx context.Context, header map[string]any, body []byte) (err error) {
 	var success bool
 	var confirmation *amqp.DeferredConfirmation
 
@@ -22,8 +21,8 @@ func (publisher *RabbitMQPublisher) Publish(ctx context.Context, publishing dto_
 		ContentType:     "application/json",
 		ContentEncoding: "utf-8",
 		DeliveryMode:    amqp.Persistent,
-		Headers:         publishing.Header,
-		Body:            publishing.Body,
+		Headers:         alignHeaderAsAmqpTable(header),
+		Body:            body,
 	}
 
 	publisher.logger.DebugContext(ctx, "starting publish", publisher.logGroup)
@@ -48,4 +47,22 @@ func (publisher *RabbitMQPublisher) Publish(ctx context.Context, publishing dto_
 	publisher.logger.InfoContext(ctx, "success publishing", slog.Uint64("publish_tag", confirmation.DeliveryTag), publisher.logGroup)
 
 	return nil
+}
+
+func alignHeaderAsAmqpTable(header map[string]any) (table amqp.Table) {
+	if len(header) == 0 {
+		return nil
+	}
+
+	table = make(amqp.Table, len(header))
+	for key, value := range header {
+		switch field := value.(type) {
+		case map[string]any:
+			table[key] = alignHeaderAsAmqpTable(field)
+		default:
+			table[key] = value
+		}
+	}
+
+	return table
 }

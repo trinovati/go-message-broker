@@ -19,5 +19,4 @@ type BrokerDelivery struct {
 	Header         map[string]any
 	Body           []byte
 	ConsumerDetail map[string]any
-	Acknowledger   chan BrokerAcknowledge
 }
